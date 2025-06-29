@@ -1,22 +1,19 @@
-// shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/dto/WeatherDto.kt
+// shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/dto/DailyForecastDto.kt
 package com.x3squaredcircles.pixmap.shared.application.dto
 
 import kotlinx.datetime.Instant
+import kotlinx.datetime.LocalDate
 
 /**
- * Data transfer object for Weather
+ * Data transfer object for Daily Forecast
  */
-data class WeatherDto(
-    val id: Int,
-    val locationId: Int,
-    val latitude: Double,
-    val longitude: Double,
-    val timezone: String,
-    val timezoneOffset: Int,
-    val lastUpdate: Instant,
+data class DailyForecastDto(
+    val date: LocalDate,
+    val sunrise: Instant,
+    val sunset: Instant,
     val temperature: Double,
-    val minimumTemp: Double,
-    val maximumTemp: Double,
+    val minTemperature: Double,
+    val maxTemperature: Double,
     val description: String,
     val icon: String,
     val windSpeed: Double,
@@ -27,8 +24,6 @@ data class WeatherDto(
     val clouds: Int,
     val uvIndex: Double,
     val precipitation: Double?,
-    val sunrise: Instant,
-    val sunset: Instant,
     val moonRise: Instant?,
     val moonSet: Instant?,
     val moonPhase: Double
