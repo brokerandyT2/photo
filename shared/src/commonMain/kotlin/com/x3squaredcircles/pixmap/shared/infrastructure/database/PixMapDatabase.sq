@@ -1,0 +1,204 @@
+// shared/src/commonMain/sqldelight/com/x3squaredcircles/pixmap/shared/infrastructure/database/PixMapDatabase.sq
+
+CREATE TABLE LocationEntity (
+   id INTEGER PRIMARY KEY AUTOINCREMENT,
+   title TEXT NOT NULL,
+   description TEXT NOT NULL,
+   latitude REAL NOT NULL,
+   longitude REAL NOT NULL,
+   city TEXT NOT NULL,
+   state TEXT NOT NULL,
+   photoPath TEXT,
+   isDeleted INTEGER NOT NULL DEFAULT 0,
+   timestamp INTEGER NOT NULL
+);
+
+CREATE TABLE WeatherEntity (
+   id INTEGER PRIMARY KEY AUTOINCREMENT,
+   locationId INTEGER NOT NULL,
+   latitude REAL NOT NULL,
+   longitude REAL NOT NULL,
+   timezone TEXT NOT NULL,
+   timezoneOffset INTEGER NOT NULL,
+   lastUpdate INTEGER NOT NULL
+);
+
+CREATE TABLE WeatherForecastEntity (
+   id INTEGER PRIMARY KEY AUTOINCREMENT,
+   weatherId INTEGER NOT NULL,
+   date INTEGER NOT NULL,
+   sunrise INTEGER NOT NULL,
+   sunset INTEGER NOT NULL,
+   temperature REAL NOT NULL,
+   minTemperature REAL NOT NULL,
+   maxTemperature REAL NOT NULL,
+   description TEXT NOT NULL,
+   icon TEXT NOT NULL,
+   windSpeed REAL NOT NULL,
+   windDirection REAL NOT NULL,
+   windGust REAL,
+   humidity INTEGER NOT NULL,
+   pressure INTEGER NOT NULL,
+   clouds INTEGER NOT NULL,
+   uvIndex REAL NOT NULL,
+   precipitation REAL,
+   moonRise INTEGER,
+   moonSet INTEGER,
+   moonPhase REAL NOT NULL,
+   FOREIGN KEY (weatherId) REFERENCES WeatherEntity(id) ON DELETE CASCADE
+);
+
+CREATE TABLE HourlyForecastEntity (
+   id INTEGER PRIMARY KEY AUTOINCREMENT,
+   weatherId INTEGER NOT NULL,
+   dateTime INTEGER NOT NULL,
+   temperature REAL NOT NULL,
+   feelsLike REAL NOT NULL,
+   description TEXT NOT NULL,
+   icon TEXT NOT NULL,
+   windSpeed REAL NOT NULL,
+   windDirection REAL NOT NULL,
+   windGust REAL,
+   humidity INTEGER NOT NULL,
+   pressure INTEGER NOT NULL,
+   clouds INTEGER NOT NULL,
+   uvIndex REAL NOT NULL,
+   probabilityOfPrecipitation REAL NOT NULL,
+   visibility INTEGER NOT NULL,
+   dewPoint REAL NOT NULL,
+   FOREIGN KEY (weatherId) REFERENCES WeatherEntity(id) ON DELETE CASCADE
+);
+
+CREATE TABLE TipTypeEntity (
+   id INTEGER PRIMARY KEY AUTOINCREMENT,
+   name TEXT NOT NULL,
+   i8n TEXT NOT NULL DEFAULT 'en-US'
+);
+
+CREATE TABLE TipEntity (
+   id INTEGER PRIMARY KEY AUTOINCREMENT,
+   tipTypeId INTEGER NOT NULL,
+   title TEXT NOT NULL,
+   content TEXT NOT NULL,
+   fstop TEXT NOT NULL,
+   shutterSpeed TEXT NOT NULL,
+   iso TEXT NOT NULL,
+   i8n TEXT NOT NULL DEFAULT 'en-US',
+   FOREIGN KEY (tipTypeId) REFERENCES TipTypeEntity(id) ON DELETE CASCADE
+);
+
+CREATE TABLE SettingEntity (
+   id INTEGER PRIMARY KEY AUTOINCREMENT,
+   key TEXT UNIQUE NOT NULL,
+   value TEXT NOT NULL,
+   description TEXT NOT NULL,
+   timestamp INTEGER NOT NULL
+);
+
+CREATE TABLE Log (
+   id INTEGER PRIMARY KEY AUTOINCREMENT,
+   timestamp INTEGER NOT NULL,
+   level TEXT NOT NULL,
+   message TEXT NOT NULL,
+   exception TEXT NOT NULL
+);
+
+CREATE TABLE Subscription (
+   id INTEGER PRIMARY KEY AUTOINCREMENT,
+   userId TEXT NOT NULL,
+   subscriptionType TEXT NOT NULL,
+   status TEXT NOT NULL,
+   startDate INTEGER NOT NULL,
+   expirationDate INTEGER,
+   autoRenew INTEGER NOT NULL DEFAULT 0,
+   paymentMethod TEXT,
+   lastPaymentDate INTEGER,
+   createdAt INTEGER NOT NULL,
+   updatedAt INTEGER NOT NULL
+);
+
+CREATE TABLE PhoneCameraProfileEntity (
+   id INTEGER PRIMARY KEY AUTOINCREMENT,
+   phoneModel TEXT NOT NULL,
+   mainLensFocalLength REAL NOT NULL,
+   mainLensFOV REAL NOT NULL,
+   ultraWideFocalLength REAL,
+   telephotoFocalLength REAL,
+   dateCalibrated INTEGER NOT NULL,
+   isActive INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE CameraBodies (
+   id INTEGER PRIMARY KEY AUTOINCREMENT,
+   name TEXT NOT NULL,
+   brand TEXT NOT NULL,
+   mountType TEXT NOT NULL,
+   sensorSize TEXT NOT NULL,
+   cropFactor REAL NOT NULL,
+   isUserCreated INTEGER NOT NULL DEFAULT 0,
+   dateAdded INTEGER NOT NULL
+);
+
+CREATE TABLE Lenses (
+   id INTEGER PRIMARY KEY AUTOINCREMENT,
+   name TEXT NOT NULL,
+   brand TEXT NOT NULL,
+   minMM INTEGER NOT NULL,
+   maxMM INTEGER,
+   maxAperture REAL NOT NULL,
+   minAperture REAL NOT NULL,
+   isUserCreated INTEGER NOT NULL DEFAULT 0,
+   dateAdded INTEGER NOT NULL
+);
+
+CREATE TABLE LensCameraCompatibility (
+   id INTEGER PRIMARY KEY AUTOINCREMENT,
+   lensId INTEGER NOT NULL,
+   cameraBodyId INTEGER NOT NULL,
+   isCompatible INTEGER NOT NULL DEFAULT 1,
+   notes TEXT,
+   FOREIGN KEY (lensId) REFERENCES Lenses(id) ON DELETE CASCADE,
+   FOREIGN KEY (cameraBodyId) REFERENCES CameraBodies(id) ON DELETE CASCADE,
+   UNIQUE(lensId, cameraBodyId)
+);
+
+CREATE TABLE UserCameraBodies (
+   id INTEGER PRIMARY KEY AUTOINCREMENT,
+   userId TEXT NOT NULL,
+   cameraBodyId INTEGER NOT NULL,
+   isFavorite INTEGER NOT NULL DEFAULT 0,
+   dateSaved INTEGER NOT NULL,
+   FOREIGN KEY (cameraBodyId) REFERENCES CameraBodies(id) ON DELETE CASCADE,
+   UNIQUE(userId, cameraBodyId)
+);
+
+-- Indexes for performance
+CREATE INDEX idx_location_coords ON LocationEntity (latitude, longitude);
+CREATE INDEX idx_location_title ON LocationEntity (title);
+CREATE INDEX idx_location_active ON LocationEntity (isDeleted, timestamp);
+CREATE INDEX idx_location_search ON LocationEntity (title, city, state, description);
+
+CREATE INDEX idx_weather_location ON WeatherEntity (locationId, lastUpdate);
+CREATE INDEX idx_weather_forecast ON WeatherForecastEntity (weatherId, date);
+CREATE INDEX idx_hourly_forecast ON HourlyForecastEntity (weatherId, dateTime);
+
+CREATE INDEX idx_tip_type ON TipEntity (tipTypeId);
+CREATE INDEX idx_tip_title ON TipEntity (title);
+
+CREATE UNIQUE INDEX idx_setting_key ON SettingEntity (key);
+
+CREATE INDEX idx_log_timestamp ON Log (timestamp DESC);
+CREATE INDEX idx_log_level ON Log (level, timestamp);
+
+CREATE INDEX idx_subscription_user ON Subscription (userId, status, expirationDate);
+
+CREATE INDEX idx_camera_user ON CameraBodies (isUserCreated, name);
+CREATE INDEX idx_camera_mount ON CameraBodies (mountType);
+CREATE INDEX idx_lens_user ON Lenses (isUserCreated, minMM);
+CREATE INDEX idx_lens_focal ON Lenses (minMM, maxMM);
+CREATE INDEX idx_compatibility_lens ON LensCameraCompatibility (lensId);
+CREATE INDEX idx_compatibility_camera ON LensCameraCompatibility (cameraBodyId);
+CREATE INDEX idx_user_camera_body ON UserCameraBodies (userId, cameraBodyId, isFavorite, dateSaved);
+
+-- Database versioning
+PRAGMA user_version = 1;
