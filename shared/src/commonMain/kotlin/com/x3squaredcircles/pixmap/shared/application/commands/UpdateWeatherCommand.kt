@@ -5,8 +5,9 @@ import com.x3squaredcircles.pixmap.shared.application.dto.WeatherDto
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IRequest
 
 /**
- * Command to update weather data for a location
+ * Command to update weather information for a specific location
  */
 data class UpdateWeatherCommand(
-    val locationId: Int
+    val locationId: Int,
+    val forceUpdate: Boolean = false
 ) : IRequest<WeatherDto>

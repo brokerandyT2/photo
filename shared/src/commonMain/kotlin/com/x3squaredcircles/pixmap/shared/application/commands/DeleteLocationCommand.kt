@@ -1,5 +1,5 @@
 // shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/handlers/commands/DeleteLocationCommandHandler.kt
-package com.x3squaredcircles.pixmap.shared.application.handlers.commands
+package com.x3squaredcircles.pixmap.shared.application.commands
 
 import com.x3squaredcircles.pixmap.shared.application.commands.DeleteLocationCommand
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IRequestHandler
