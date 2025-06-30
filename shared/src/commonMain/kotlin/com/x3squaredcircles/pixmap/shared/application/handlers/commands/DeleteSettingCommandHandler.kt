@@ -1,8 +1,7 @@
-// shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/handlers/commands/UpdateSettingCommandHandler.kt
+// shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/handlers/commands/DeleteSettingCommandHandler.kt
 package com.x3squaredcircles.pixmap.shared.application.handlers.commands
 
-import com.x3squaredcircles.pixmap.shared.application.commands.UpdateSettingCommand
-import com.x3squaredcircles.pixmap.shared.application.dto.UpdateSettingCommandResponse
+import com.x3squaredcircles.pixmap.shared.application.commands.DeleteSettingCommand
 import com.x3squaredcircles.pixmap.shared.application.events.SettingErrorEvent
 import com.x3squaredcircles.pixmap.shared.application.events.SettingErrorType
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IMediator
@@ -11,14 +10,14 @@ import com.x3squaredcircles.pixmap.shared.application.interfaces.repositories.IS
 import com.x3squaredcircles.pixmap.shared.domain.exceptions.SettingDomainException
 
 /**
- * Handler for UpdateSettingCommand
+ * Handler for DeleteSettingCommand
  */
-class UpdateSettingCommandHandler(
+class DeleteSettingCommandHandler(
     private val settingRepository: ISettingRepository,
     private val mediator: IMediator
-) : IRequestHandler<UpdateSettingCommand, UpdateSettingCommandResponse> {
+) : IRequestHandler<DeleteSettingCommand, Boolean> {
 
-    override suspend fun handle(request: UpdateSettingCommand): UpdateSettingCommandResponse {
+    override suspend fun handle(request: DeleteSettingCommand): Boolean {
         try {
             val settingResult = settingRepository.getByKeyAsync(request.key)
 
@@ -33,31 +32,20 @@ class UpdateSettingCommandHandler(
                 throw IllegalArgumentException("Setting with key '${request.key}' not found")
             }
 
-            val setting = settingResult.getOrThrow()
-            setting.updateValue(request.value)
+            val result = settingRepository.deleteAsync(request.key)
 
-            val updateResult = settingRepository.updateAsync(setting)
-
-            if (!updateResult.isSuccess) {
+            if (!result.isSuccess) {
                 mediator.publish(
                     SettingErrorEvent(
                         key = request.key,
                         errorType = SettingErrorType.DATABASE_ERROR,
-                        message = updateResult.exceptionOrNull()?.message ?: "Update failed"
+                        message = result.exceptionOrNull()?.message ?: "Delete failed"
                     )
                 )
-                throw RuntimeException("Failed to update setting: ${updateResult.exceptionOrNull()?.message}")
+                throw RuntimeException("Failed to delete setting: ${result.exceptionOrNull()?.message}")
             }
 
-            val updatedSetting = updateResult.getOrThrow()
-
-            return UpdateSettingCommandResponse(
-                id = updatedSetting.id,
-                key = updatedSetting.key,
-                value = updatedSetting.value,
-                description = updatedSetting.description,
-                timestamp = updatedSetting.timestamp
-            )
+            return true
         } catch (ex: SettingDomainException) {
             when (ex.code) {
                 "READ_ONLY_SETTING" -> {
@@ -65,20 +53,10 @@ class UpdateSettingCommandHandler(
                         SettingErrorEvent(
                             key = request.key,
                             errorType = SettingErrorType.READ_ONLY_SETTING,
-                            message = ex.message ?: "Cannot update read-only setting"
+                            message = ex.message ?: "Cannot delete read-only setting"
                         )
                     )
-                    throw IllegalStateException("Cannot update read-only setting")
-                }
-                "INVALID_VALUE" -> {
-                    mediator.publish(
-                        SettingErrorEvent(
-                            key = request.key,
-                            errorType = SettingErrorType.INVALID_VALUE,
-                            message = ex.message ?: "Invalid value provided"
-                        )
-                    )
-                    throw IllegalArgumentException("Invalid value provided")
+                    throw IllegalStateException("Cannot delete read-only setting")
                 }
                 else -> throw ex
             }
@@ -87,10 +65,10 @@ class UpdateSettingCommandHandler(
                 SettingErrorEvent(
                     key = request.key,
                     errorType = SettingErrorType.DATABASE_ERROR,
-                    message = ex.message ?: "Update operation failed"
+                    message = ex.message ?: "Delete operation failed"
                 )
             )
-            throw RuntimeException("Failed to update setting: ${ex.message}", ex)
+            throw RuntimeException("Failed to delete setting: ${ex.message}", ex)
         }
     }
 }
