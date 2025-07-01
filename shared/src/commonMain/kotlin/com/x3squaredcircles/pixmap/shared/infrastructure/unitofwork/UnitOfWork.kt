@@ -1,50 +1,32 @@
 // shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/infrastructure/unitofwork/UnitOfWork.kt
 
-package com.x3squaredcircles.pixmap.shared.infrastructure.unitofwork
-
-import com.x3squaredcircles.pixmap.shared.application.interfaces.ILocationRepository
-import com.x3squaredcircles.pixmap.shared.application.interfaces.ISettingRepository
-import com.x3squaredcircles.pixmap.shared.application.interfaces.ITipRepository
-import com.x3squaredcircles.pixmap.shared.application.interfaces.ITipTypeRepository
-import com.x3squaredcircles.pixmap.shared.application.interfaces.IWeatherRepository
-import com.x3squaredcircles.pixmap.shared.infrastructure.database.IDatabaseContext
-
-interface IUnitOfWork {
-    val locations: ILocationRepository
-    val subscriptions: ISubscriptionRepository
-    val weather: IWeatherRepository
-    val tips: ITipRepository
-    val tipTypes: ITipTypeRepository
-    val settings: ISettingRepository
-
-    suspend fun saveChangesAsync(): Int
-    fun getDatabaseContext(): IDatabaseContext
-    suspend fun beginTransactionAsync()
-    suspend fun commitAsync()
-    suspend fun rollbackAsync()
-}
-
-interface ISubscriptionRepository {
-    // Placeholder for subscription repository interface
-    // Will be implemented when subscription functionality is added
-}
+import com.x3squaredcircles.pixmap.shared.application.common.interfaces.*
+import com.x3squaredcircles.pixmap.shared.infrastructure.data.IDatabaseContext
+import kotlinx.coroutines.logging.Logger
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
 
 class UnitOfWork(
     private val context: IDatabaseContext,
-    override val locations: ILocationRepository,
-    override val subscriptions: ISubscriptionRepository,
-    override val weather: IWeatherRepository,
-    override val tips: ITipRepository,
-    override val tipTypes: ITipTypeRepository,
-    override val settings: ISettingRepository
-) : IUnitOfWork {
+    private val logger: Logger
+) : IUnitOfWork, KoinComponent {
 
     private var inTransaction: Boolean = false
-    private val transactionLock = Any()
+
+    override val locations: ILocationRepository by inject()
+
+    override val subscriptions: ISubscriptionRepository by inject()
+
+    override val weather: IWeatherRepository by inject()
+
+    override val tips: ITipRepository by inject()
+
+    override val tipTypes: ITipTypeRepository by inject()
+
+    override val settings: ISettingRepository by inject()
 
     override suspend fun saveChangesAsync(): Int {
-        // In SQLDelight, saves are immediate, so this is a no-op
-        // But we return 1 to indicate success for compatibility
+        logger.debug("saveChangesAsync called")
         return 1
     }
 
@@ -53,53 +35,60 @@ class UnitOfWork(
     }
 
     override suspend fun beginTransactionAsync() {
-        synchronized(transactionLock) {
-            if (inTransaction) {
-                throw IllegalStateException("Transaction already in progress")
-            }
+        if (inTransaction) {
+            throw IllegalStateException("Transaction already in progress")
         }
 
         try {
-            context.beginTransaction()
-            synchronized(transactionLock) {
-                inTransaction = true
-            }
-        } catch (e: Exception) {
-            throw UnitOfWorkException("Failed to begin transaction", e)
+            context.beginTransactionAsync()
+            inTransaction = true
+            logger.debug("Transaction started")
+        } catch (ex: Exception) {
+            logger.error("Failed to begin transaction", ex)
+            throw ex
         }
     }
 
     override suspend fun commitAsync() {
-        synchronized(transactionLock) {
-            if (!inTransaction) {
-                return
-            }
-        }
+        logger.debug("commitAsync called")
 
-        try {
-            context.commitTransaction()
-        } finally {
-            synchronized(transactionLock) {
-                inTransaction = false
-            }
+        if (inTransaction) {
+            context.commitTransactionAsync()
+            inTransaction = false
+            logger.debug("Transaction committed")
         }
     }
 
     override suspend fun rollbackAsync() {
-        synchronized(transactionLock) {
-            if (!inTransaction) {
-                throw IllegalStateException("No transaction in progress")
-            }
+        if (!inTransaction) {
+            throw IllegalStateException("No transaction in progress")
         }
 
         try {
-            context.rollbackTransaction()
-        } finally {
-            synchronized(transactionLock) {
-                inTransaction = false
-            }
+            context.rollbackTransactionAsync()
+            inTransaction = false
+            logger.debug("Transaction rolled back")
+        } catch (ex: Exception) {
+            logger.error("Failed to rollback transaction", ex)
+            throw ex
         }
     }
-}
 
-class UnitOfWorkException(message: String, cause: Throwable? = null) : Exception(message, cause)
+    private var disposed = false
+
+    fun dispose() {
+        if (disposed) return
+
+        if (inTransaction) {
+            try {
+                // Note: This would need to be handled properly in a real implementation
+                // since we can't call suspend functions from dispose
+                logger.error("Transaction still in progress during disposal")
+            } catch (ex: Exception) {
+                logger.error("Error rolling back transaction during disposal", ex)
+            }
+        }
+
+        disposed = true
+    }
+}

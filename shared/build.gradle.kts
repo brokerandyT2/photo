@@ -4,23 +4,6 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
-plugins {
-    alias(libs.plugins.kotlin.multiplatform)
-    alias(libs.plugins.android.library)
-    alias(libs.plugins.kotlin.serialization)
-}
-
-plugins {
-    alias(libs.plugins.kotlin.multiplatform)
-    alias(libs.plugins.android.library)
-    alias(libs.plugins.kotlin.serialization)
-}
-
-plugins {
-    alias(libs.plugins.kotlin.multiplatform)
-    alias(libs.plugins.android.library)
-    alias(libs.plugins.kotlin.serialization)
-}
 
 kotlin {
     android {
@@ -76,7 +59,7 @@ kotlin {
 
 android {
     namespace = "com.x3squaredcircles.pixmap.shared"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         minSdk = 28

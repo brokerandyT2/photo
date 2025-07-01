@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "com.x3squaredcircles.pixmap"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.x3squaredcircles.pixmap"

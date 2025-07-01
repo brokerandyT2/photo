@@ -48,7 +48,7 @@
     <string name="golden_hour_morning">Morning Golden Hour End:</string>
     <string name="green">Green</string>
     <string name="gusts">Gusts</string>
-    <string name="half">1/2</string>
+    <string name="half">½</string>
     <string name="high">High:</string>
     <string name="information">Information</string>
     <string name="iso">ISO: </string>
@@ -88,15 +88,15 @@
     <string name="sun_location_tutorial">Sun Location Tutorial</string>
     <string name="sunrise">Sun Rise: </string>
     <string name="sunset">Sun Set:</string>
-    <string name="switch">Switch</string>
+    <string name="change">Switch</string>
     <string name="switch_clock_type">Switch Clock Format</string>
     <string name="switch_date_format">Switch Date Format</string>
     <string name="switch_hemisphere">Switch Hemisphere</string>
     <string name="take_reading">Take Reading</string>
     <string name="temperature_format">Temperature Scale</string>
     <string name="test">Test</string>
-    <string name="test_extra">testt</string>
-    <string name="thirds">1/3</string>
+    <string name="test_extra">test</string>
+    <string name="thirds">⅓</string>
     <string name="tips_tutorial">Tips Tutorial</string>
     <string name="tip_viewed">Tips Viewed</string>
     <string name="title">Title:</string>
@@ -108,7 +108,7 @@
     <string name="watch_ad_for_access">Would you like to watch a short Advertisement to gain %1$d hours of access to this feature?</string>
     <string name="weather">Weather</string>
     <string name="weather_display_tutorial">Weather Display Tutorial</string>
-    <string name="welcome">Welcome to PixMap. Please take this opportunity to configure your application. You may return to this screen using the 'gear' icon in the top right corner of your screen.</string>
+    <string name="welcome">Welcome to PixMap. Please take this opportunity to configure your application. You may return to this screen using the \\'gear\\' icon in the top right corner of your screen.</string>
     <string name="wind">Wind Direction</string>
     <string name="wind_direction">Wind Direction</string>
     <string name="wind_speed">Wind Speed</string>
