@@ -1,22 +1,23 @@
 // shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/infrastructure/services/LoggingService.kt
-package com.x3squaredcircles.pixmap.shared.infrastructure.services
 
 import com.x3squaredcircles.pixmap.shared.application.interfaces.services.ILoggingService
 import com.x3squaredcircles.pixmap.shared.application.interfaces.services.LogLevel
-import com.x3squaredcircles.pixmap.shared.infrastructure.persistence.IDatabaseContext
-import com.x3squaredcircles.pixmap.shared.infrastructure.persistence.entities.Log
+import com.x3squaredcircles.pixmap.shared.infrastructure.data.IDatabaseContext
+import com.x3squaredcircles.pixmap.shared.infrastructure.data.entities.LogEntity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
+import kotlinx.coroutines.logging.Logger
 
 /**
  * Logging service implementation with database persistence and fault tolerance
  */
 class LoggingService(
-    private val databaseContext: IDatabaseContext
+    private val databaseContext: IDatabaseContext,
+    private val logger: Logger
 ) : ILoggingService {
 
     private var currentLogLevel = LogLevel.INFO
@@ -64,247 +65,252 @@ class LoggingService(
 
     override fun logOperationFailure(operationName: String, exception: Throwable, durationMs: Long?) {
         val durationString = durationMs?.let { " | Duration: ${it}ms" } ?: ""
-        val message = "Operation failed: $operationName$durationString"
-
+        val message = "Operation failed: $operationName$durationString | Error: ${exception.message}"
         logError(message, exception, "OPERATION")
     }
 
     override fun setLogLevel(level: LogLevel) {
         currentLogLevel = level
-        logInfo("Log level changed to: $level", "SYSTEM")
+        logInfo("Log level changed to $level", "LOGGING")
     }
 
     override fun setLoggingEnabled(enabled: Boolean) {
         loggingEnabled = enabled
         if (enabled) {
-            logInfo("Logging enabled", "SYSTEM")
+            logInfo("Logging enabled", "LOGGING")
         }
     }
 
-    /**
-     * Logs message to database asynchronously with fault tolerance
-     */
-    suspend fun logToDatabaseAsync(level: LogLevel, message: String, exception: Throwable? = null) {
+    // Database operations
+    suspend fun logToDatabaseAsync(level: LogLevel, message: String, exception: Throwable? = null, tag: String? = null) {
         try {
-            val log = Log(
+            val logEntity = LogEntity(
+                id = 0,
                 timestamp = Clock.System.now(),
                 level = level.name,
                 message = message,
-                exception = exception?.stackTraceToString() ?: ""
+                exception = exception?.stackTraceToString() ?: "",
+                tag = tag ?: ""
             )
 
-            databaseContext.insertAsync(log)
+            databaseContext.insertAsync(logEntity) { entity ->
+                insertLog(entity)
+            }
         } catch (ex: Exception) {
-            // If we can't log to database, log to console as fallback
-            println("Failed to write log to database: ${ex.message}")
+            // If we can't log to database, log to the standard logger
+            logger.error("Failed to write log to database", ex)
             // Do NOT rethrow - this method should be fault-tolerant
         }
     }
 
-    /**
-     * Retrieves logs from database with error handling
-     */
-    suspend fun getLogsAsync(count: Int = 100): List<Log> {
+    suspend fun getLogsAsync(count: Int = 100): List<LogEntity> {
         return try {
-            databaseContext.queryAsync<Log>(
-                "SELECT * FROM Log ORDER BY Timestamp DESC LIMIT ?",
-                arrayOf(count)
+            databaseContext.queryAsync(
+                "SELECT * FROM LogEntity ORDER BY Timestamp DESC LIMIT ?",
+                ::mapCursorToLogEntity,
+                count
             )
         } catch (ex: Exception) {
-            println("Failed to retrieve logs from database: ${ex.message}")
+            logger.error("Failed to retrieve logs from database", ex)
             emptyList()
         }
     }
 
-    /**
-     * Clears all logs from database
-     */
     suspend fun clearLogsAsync() {
         try {
-            databaseContext.executeAsync("DELETE FROM Log")
-            logInfo("Cleared all logs from database", "SYSTEM")
+            val deletedCount = databaseContext.executeAsync("DELETE FROM LogEntity")
+            logger.info("Cleared $deletedCount logs from database")
         } catch (ex: Exception) {
-            logError("Failed to clear logs from database", ex, "SYSTEM")
+            logger.error("Failed to clear logs from database", ex)
             throw ex
         }
     }
 
-    /**
-     * Gets logs by level with pagination
-     */
-    suspend fun getLogsByLevelAsync(level: LogLevel, offset: Int = 0, limit: Int = 50): List<Log> {
+    suspend fun getLogsByLevelAsync(level: LogLevel, count: Int = 100): List<LogEntity> {
         return try {
-            databaseContext.queryAsync<Log>(
-                "SELECT * FROM Log WHERE Level = ? ORDER BY Timestamp DESC LIMIT ? OFFSET ?",
-                arrayOf(level.name, limit, offset)
+            databaseContext.queryAsync(
+                "SELECT * FROM LogEntity WHERE Level = ? ORDER BY Timestamp DESC LIMIT ?",
+                ::mapCursorToLogEntity,
+                level.name,
+                count
             )
         } catch (ex: Exception) {
-            println("Failed to retrieve logs by level from database: ${ex.message}")
+            logger.error("Failed to retrieve logs by level from database", ex)
             emptyList()
         }
     }
 
-    /**
-     * Gets logs within a time range
-     */
-    suspend fun getLogsByTimeRangeAsync(
-        startTime: Instant,
-        endTime: Instant,
-        limit: Int = 100
-    ): List<Log> {
+    suspend fun getLogsByTagAsync(tag: String, count: Int = 100): List<LogEntity> {
         return try {
-            databaseContext.queryAsync<Log>(
-                "SELECT * FROM Log WHERE Timestamp >= ? AND Timestamp <= ? ORDER BY Timestamp DESC LIMIT ?",
-                arrayOf(startTime.toString(), endTime.toString(), limit)
+            databaseContext.queryAsync(
+                "SELECT * FROM LogEntity WHERE Tag = ? ORDER BY Timestamp DESC LIMIT ?",
+                ::mapCursorToLogEntity,
+                tag,
+                count
             )
         } catch (ex: Exception) {
-            println("Failed to retrieve logs by time range from database: ${ex.message}")
+            logger.error("Failed to retrieve logs by tag from database", ex)
             emptyList()
         }
     }
 
-    /**
-     * Gets log count by level
-     */
-    suspend fun getLogCountByLevelAsync(level: LogLevel): Int {
+    suspend fun getLogsByDateRangeAsync(startTime: Instant, endTime: Instant): List<LogEntity> {
         return try {
-            val result = databaseContext.scalarAsync<Int>(
-                "SELECT COUNT(*) FROM Log WHERE Level = ?",
-                arrayOf(level.name)
+            databaseContext.queryAsync(
+                "SELECT * FROM LogEntity WHERE Timestamp BETWEEN ? AND ? ORDER BY Timestamp DESC",
+                ::mapCursorToLogEntity,
+                startTime.toString(),
+                endTime.toString()
             )
-            result ?: 0
         } catch (ex: Exception) {
-            println("Failed to get log count by level: ${ex.message}")
-            0
+            logger.error("Failed to retrieve logs by date range from database", ex)
+            emptyList()
         }
     }
 
-    /**
-     * Deletes old logs beyond a certain count to prevent database bloat
-     */
-    suspend fun pruneOldLogsAsync(keepRecentCount: Int = 1000) {
-        try {
-            databaseContext.executeAsync(
-                """
-                DELETE FROM Log 
-                WHERE Id NOT IN (
-                    SELECT Id FROM Log 
-                    ORDER BY Timestamp DESC 
-                    LIMIT ?
-                )
-                """.trimIndent(),
-                arrayOf(keepRecentCount)
+    suspend fun deleteOldLogsAsync(olderThan: Instant): Int {
+        return try {
+            val deletedCount = databaseContext.executeAsync(
+                "DELETE FROM LogEntity WHERE Timestamp < ?",
+                olderThan.toString()
             )
-            logInfo("Pruned old logs, keeping $keepRecentCount recent entries", "SYSTEM")
+            logger.info("Deleted $deletedCount old logs from database")
+            deletedCount
         } catch (ex: Exception) {
-            logError("Failed to prune old logs", ex, "SYSTEM")
+            logger.error("Failed to delete old logs from database", ex)
+            throw ex
         }
     }
 
+    // Private helper methods
     private fun logMessage(level: LogLevel, message: String, exception: Throwable?, tag: String?) {
-        if (!loggingEnabled || level < currentLogLevel) {
+        if (!loggingEnabled || level.ordinal < currentLogLevel.ordinal) {
             return
         }
 
-        val taggedMessage = tag?.let { "[$it] $message" } ?: message
-
-        // Log to console immediately for debugging
+        // Log to standard logger immediately
         when (level) {
-            LogLevel.VERBOSE -> println("VERBOSE: $taggedMessage")
-            LogLevel.DEBUG -> println("DEBUG: $taggedMessage")
-            LogLevel.INFO -> println("INFO: $taggedMessage")
-            LogLevel.WARNING -> println("WARNING: $taggedMessage")
-            LogLevel.ERROR -> {
-                println("ERROR: $taggedMessage")
-                exception?.let { println("Exception: ${it.stackTraceToString()}") }
-            }
+            LogLevel.VERBOSE -> logger.debug(formatLogMessage(message, tag))
+            LogLevel.DEBUG -> logger.debug(formatLogMessage(message, tag))
+            LogLevel.INFO -> logger.info(formatLogMessage(message, tag))
+            LogLevel.WARNING -> logger.warning(formatLogMessage(message, tag))
+            LogLevel.ERROR -> logger.error(formatLogMessage(message, tag), exception)
             LogLevel.NONE -> { /* Do nothing */ }
         }
 
-        // Asynchronously log to database with fault tolerance
+        // Asynchronously log to database (fire and forget)
         loggingScope.launch {
-            logToDatabaseAsync(level, taggedMessage, exception)
-        }
-    }
-
-    /**
-     * Extension for batch logging operations
-     */
-    suspend fun logBatchAsync(logs: List<LogEntry>) {
-        try {
-            val logEntities = logs.map { entry ->
-                Log(
-                    timestamp = entry.timestamp,
-                    level = entry.level.name,
-                    message = entry.message,
-                    exception = entry.exception?.stackTraceToString() ?: ""
-                )
+            try {
+                logToDatabaseAsync(level, message, exception, tag)
+            } catch (ex: Exception) {
+                // Database logging failed, but we already logged to standard logger
+                // Don't propagate the exception to avoid breaking the calling code
+                logger.error("Database logging failed for message: $message", ex)
             }
-
-            databaseContext.insertBatchAsync(logEntities)
-        } catch (ex: Exception) {
-            println("Failed to write batch logs to database: ${ex.message}")
         }
     }
-}
 
-/**
- * Data class for batch logging operations
- */
-data class LogEntry(
-    val timestamp: Instant,
-    val level: LogLevel,
-    val message: String,
-    val exception: Throwable? = null,
-    val tag: String? = null
-)
+    private fun formatLogMessage(message: String, tag: String?): String {
+        return if (tag != null) "[$tag] $message" else message
+    }
 
-/**
- * Log statistics for monitoring
- */
-data class LogStatistics(
-    val totalLogs: Int,
-    val errorCount: Int,
-    val warningCount: Int,
-    val infoCount: Int,
-    val debugCount: Int,
-    val verboseCount: Int,
-    val oldestLogTime: Instant?,
-    val newestLogTime: Instant?
-)
+    private suspend fun insertLog(entity: LogEntity): Long {
+        return databaseContext.executeAsync(
+            """INSERT INTO LogEntity (Timestamp, Level, Message, Exception, Tag)
+               VALUES (?, ?, ?, ?, ?)""",
+            entity.timestamp.toString(),
+            entity.level,
+            entity.message,
+            entity.exception,
+            entity.tag
+        ).toLong()
+    }
 
-/**
- * Extension function for getting comprehensive log statistics
- */
-suspend fun LoggingService.getLogStatisticsAsync(): LogStatistics {
-    return try {
-        val totalLogs = databaseContext.scalarAsync<Int>("SELECT COUNT(*) FROM Log") ?: 0
-        val errorCount = getLogCountByLevelAsync(LogLevel.ERROR)
-        val warningCount = getLogCountByLevelAsync(LogLevel.WARNING)
-        val infoCount = getLogCountByLevelAsync(LogLevel.INFO)
-        val debugCount = getLogCountByLevelAsync(LogLevel.DEBUG)
-        val verboseCount = getLogCountByLevelAsync(LogLevel.VERBOSE)
-
-        val oldestLog = databaseContext.scalarAsync<String>(
-            "SELECT MIN(Timestamp) FROM Log"
-        )?.let { Instant.parse(it) }
-
-        val newestLog = databaseContext.scalarAsync<String>(
-            "SELECT MAX(Timestamp) FROM Log"
-        )?.let { Instant.parse(it) }
-
-        LogStatistics(
-            totalLogs = totalLogs,
-            errorCount = errorCount,
-            warningCount = warningCount,
-            infoCount = infoCount,
-            debugCount = debugCount,
-            verboseCount = verboseCount,
-            oldestLogTime = oldestLog,
-            newestLogTime = newestLog
+    private fun mapCursorToLogEntity(cursor: SqlCursor): LogEntity {
+        return LogEntity(
+            id = cursor.getInt(0) ?: 0,
+            timestamp = Instant.parse(cursor.getString(1) ?: Clock.System.now().toString()),
+            level = cursor.getString(2) ?: "INFO",
+            message = cursor.getString(3) ?: "",
+            exception = cursor.getString(4) ?: "",
+            tag = cursor.getString(5) ?: ""
         )
-    } catch (ex: Exception) {
-        println("Failed to get log statistics: ${ex.message}")
-        LogStatistics(0, 0, 0, 0, 0, 0, null, null)
     }
 }
+
+// Extension functions for structured logging
+fun ILoggingService.logWithContext(
+    level: LogLevel,
+    message: String,
+    context: Map<String, Any> = emptyMap(),
+    exception: Throwable? = null,
+    tag: String? = null
+) {
+    val contextString = if (context.isNotEmpty()) {
+        " | Context: ${context.entries.joinToString(", ") { "${it.key}=${it.value}" }}"
+    } else ""
+
+    val fullMessage = "$message$contextString"
+
+    when (level) {
+        LogLevel.VERBOSE -> logVerbose(fullMessage, tag)
+        LogLevel.DEBUG -> logDebug(fullMessage, tag)
+        LogLevel.INFO -> logInfo(fullMessage, tag)
+        LogLevel.WARNING -> logWarning(fullMessage, tag)
+        LogLevel.ERROR -> logError(fullMessage, exception, tag)
+        LogLevel.NONE -> { /* Do nothing */ }
+    }
+}
+
+// Performance tracking extensions
+inline fun <T> ILoggingService.trackOperation(
+    operationName: String,
+    parameters: Map<String, Any>? = null,
+    operation: () -> T
+): T {
+    val startTime = Clock.System.now()
+    logOperationStart(operationName, parameters)
+
+    return try {
+        val result = operation()
+        val duration = Clock.System.now() - startTime
+        logOperationComplete(operationName, duration.inWholeMilliseconds, result.toString())
+        result
+    } catch (exception: Throwable) {
+        val duration = Clock.System.now() - startTime
+        logOperationFailure(operationName, exception, duration.inWholeMilliseconds)
+        throw exception
+    }
+}
+
+// Suspend version for coroutines
+suspend inline fun <T> ILoggingService.trackOperationSuspend(
+    operationName: String,
+    parameters: Map<String, Any>? = null,
+    operation: suspend () -> T
+): T {
+    val startTime = Clock.System.now()
+    logOperationStart(operationName, parameters)
+
+    return try {
+        val result = operation()
+        val duration = Clock.System.now() - startTime
+        logOperationComplete(operationName, duration.inWholeMilliseconds, result.toString())
+        result
+    } catch (exception: Throwable) {
+        val duration = Clock.System.now() - startTime
+        logOperationFailure(operationName, exception, duration.inWholeMilliseconds)
+        throw exception
+    }
+}
+
+// Log entity data class
+data class LogEntity(
+    val id: Int = 0,
+    val timestamp: Instant,
+    val level: String,
+    val message: String,
+    val exception: String = "",
+    val tag: String = ""
+)
+
