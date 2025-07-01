@@ -1,3 +1,4 @@
+//shared/src/androidMain/kotlin/com/x3squaredcircles/pixmap/android/services/AndroidLocationService.kt
 package com.x3squaredcircles.pixmap.android.services
 
 import android.Manifest
@@ -43,20 +44,20 @@ class AndroidLocationService(
                             val coordinate = Coordinate.createValidated(location.latitude, location.longitude)
                             continuation.resume(Result.success(coordinate))
                         } catch (e: Exception) {
-                            continuation.resume(Result.error(e))
+                            continuation.resume(Result.failure(e))
                         }
                     } else {
-                        continuation.resume(Result.error("Unable to get current location"))
+                        continuation.resume(Result.failure(Exception("Unable to get current location")))
                     }
                 }.addOnFailureListener { exception ->
-                    continuation.resume(Result.error(exception))
+                    continuation.resume(Result.failure(exception))
                 }
             }
         } else {
             when {
-                !hasPermission() -> Result.error("Location permission not granted")
-                !isLocationEnabled() -> Result.error("Location services disabled")
-                else -> Result.error("Unknown location error")
+                !hasPermission() -> Result.failure(Exception("Location permission not granted"))
+                !isLocationEnabled() -> Result.failure(Exception("Location services disabled"))
+                else -> Result.failure(Exception("Unknown location error"))
             }
         }
     }
@@ -71,18 +72,18 @@ class AndroidLocationService(
                                 val coordinate = Coordinate.createValidated(location.latitude, location.longitude)
                                 continuation.resume(Result.success(coordinate))
                             } catch (e: Exception) {
-                                continuation.resume(Result.error(e))
+                                continuation.resume(Result.failure(e))
                             }
                         } else {
-                            continuation.resume(Result.error("No last known location available"))
+                            continuation.resume(Result.failure(Exception("No last known location available")))
                         }
                     }
                     .addOnFailureListener { exception ->
-                        continuation.resume(Result.error(exception))
+                        continuation.resume(Result.failure(exception))
                     }
             }
         } else {
-            Result.error("Location permission not granted")
+            Result.failure(Exception("Location permission not granted"))
         }
     }
 

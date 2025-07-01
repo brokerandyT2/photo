@@ -1,3 +1,4 @@
+//shared/src/androidMain/kotlin/com/x3squaredcircles/pixmap/android/services/AndroidNotificationService.kt
 package com.x3squaredcircles.pixmap.android.services
 
 import android.Manifest
@@ -10,7 +11,6 @@ import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
-import com.x3squaredcircles.pixmap.R
 import com.x3squaredcircles.pixmap.shared.services.INotificationService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -49,7 +49,7 @@ class AndroidNotificationService(
             val notification = NotificationCompat.Builder(context, CHANNEL_ID)
                 .setContentTitle(title)
                 .setContentText(message)
-                .setSmallIcon(R.drawable.ic_notification)
+                .setSmallIcon(android.R.drawable.ic_dialog_info) // Using system icon instead of R.drawable
                 .setPriority(NotificationCompat.PRIORITY_DEFAULT)
                 .setAutoCancel(true)
                 .build()

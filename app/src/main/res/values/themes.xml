@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- app/src/main/res/values/themes.xml -->
 <resources>
-    <style name="Theme.PixMap" parent="Theme.Material3.DayNight.NoActionBar">
+    <style name="Theme.PixMap" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="colorPrimary">#FF3D20</item>
         <item name="colorPrimaryDark">#E5351C</item>
         <item name="colorAccent">#FF3D20</item>

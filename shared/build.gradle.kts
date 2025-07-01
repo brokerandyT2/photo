@@ -1,12 +1,13 @@
+//shared/build.gradle.kts
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.sqldelight)
 }
 
-
 kotlin {
-    android {
+    androidTarget {
         // Android target configuration
     }
 
@@ -27,6 +28,15 @@ kotlin {
 
                 // UUID for subscription/user management
                 implementation(libs.kotlinx.uuid)
+
+                // Ktor HTTP Client
+                implementation(libs.ktor.client.core)
+                implementation(libs.ktor.client.content.negotiation)
+                implementation(libs.ktor.client.logging)
+                implementation(libs.ktor.serialization.kotlinx.json)
+
+                // SQLDelight Database
+                implementation(libs.sqldelight.coroutines)
             }
         }
 
@@ -43,8 +53,22 @@ kotlin {
                 implementation(libs.kotlinx.coroutines.android)
                 implementation(libs.koin.android)
 
-                // Android-specific billing (business logic still in commonMain)
+                // Android-specific dependencies
                 implementation(libs.google.play.billing)
+
+                // Ktor Android specific
+                implementation(libs.ktor.client.android)
+                implementation(libs.ktor.client.content.negotiation)
+                implementation(libs.ktor.serialization.kotlinx.json)
+
+                // SQLDelight Android driver
+                implementation(libs.sqldelight.driver.android)
+
+                // Android Location Services
+                implementation("com.google.android.gms:play-services-location:21.0.1")
+
+                // Android Notifications
+                implementation("androidx.core:core-ktx:1.13.1")
             }
         }
 
@@ -66,7 +90,15 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
+    }
+}
+
+sqldelight {
+    databases {
+        create("PixMapDatabase") {
+            packageName.set("com.x3squaredcircles.pixmap.shared.infrastructure.data")
+        }
     }
 }

@@ -108,7 +108,7 @@
     <string name="watch_ad_for_access">Would you like to watch a short Advertisement to gain %1$d hours of access to this feature?</string>
     <string name="weather">Weather</string>
     <string name="weather_display_tutorial">Weather Display Tutorial</string>
-    <string name="welcome">Welcome to PixMap. Please take this opportunity to configure your application. You may return to this screen using the \\'gear\\' icon in the top right corner of your screen.</string>
+    <string name="welcome">Welcome to PixMap. Please take this opportunity to configure your application. You may return to this screen using the "gear" icon in the top right corner of your screen.</string>
     <string name="wind">Wind Direction</string>
     <string name="wind_direction">Wind Direction</string>
     <string name="wind_speed">Wind Speed</string>
