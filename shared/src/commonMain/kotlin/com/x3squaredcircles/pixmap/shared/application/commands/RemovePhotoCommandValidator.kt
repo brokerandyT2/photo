@@ -1,9 +1,8 @@
-// shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/commands/RemovePhotoCommandValidator.kt
+//shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/commands/RemovePhotoCommandValidator.kt
 package com.x3squaredcircles.pixmap.shared.application.commands
 
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IValidator
-import com.x3squaredcircles.pixmap.shared.application.models.ValidationResult
-import com.x3squaredcircles.pixmap.shared.application.resources.AppResources
+import com.x3squaredcircles.pixmap.shared.application.common.models.ValidationResult
 
 /**
  * Provides validation rules for the [RemovePhotoCommand].
@@ -24,7 +23,7 @@ class RemovePhotoCommandValidator : IValidator<RemovePhotoCommand> {
 
         // Validate LocationId
         if (command.locationId <= 0) {
-            errors.add(AppResources.locationValidationErrorLocationIdRequired)
+            errors.add("Location ID must be greater than 0")
         }
 
         return if (errors.isEmpty()) {

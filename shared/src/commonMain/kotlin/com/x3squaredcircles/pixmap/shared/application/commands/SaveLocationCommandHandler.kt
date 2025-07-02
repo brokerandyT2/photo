@@ -1,20 +1,20 @@
-// shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/commands/SaveLocationCommandHandler.kt
+//shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/commands/SaveLocationCommandHandler.kt
 package com.x3squaredcircles.pixmap.shared.application.commands
 
-import com.x3squaredcircles.pixmap.shared.application.common.interfaces.IUnitOfWork
+import com.x3squaredcircles.pixmap.shared.application.interfaces.IUnitOfWork
 import com.x3squaredcircles.pixmap.shared.application.common.models.Result
 import com.x3squaredcircles.pixmap.shared.application.dto.LocationDto
-import com.x3squaredcircles.pixmap.shared.application.events.`events/errors`.LocationSaveErrorEvent
-import com.x3squaredcircles.pixmap.shared.application.events.`events/errors`.LocationErrorType
+import com.x3squaredcircles.pixmap.shared.application.events.LocationSaveErrorEvent
+import com.x3squaredcircles.pixmap.shared.application.events.LocationErrorType
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IRequestHandler
+import com.x3squaredcircles.pixmap.shared.application.interfaces.IRequest
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IMediator
-import com.x3squaredcircles.pixmap.shared.application.resources.AppResources
 import com.x3squaredcircles.pixmap.shared.domain.entities.Location
 import com.x3squaredcircles.pixmap.shared.domain.exceptions.LocationDomainException
-import com.x3squaredcircles.pixmap.shared.domain.mappers.LocationMapper
+import com.x3squaredcircles.pixmap.shared.application.mappers.LocationMapper
 import com.x3squaredcircles.pixmap.shared.domain.valueobjects.Address
 import com.x3squaredcircles.pixmap.shared.domain.valueobjects.Coordinate
-import kotlinx.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.CancellationException
 
 /**
  * Represents a command to save a location with its associated details.
@@ -32,7 +32,7 @@ data class SaveLocationCommand(
     val city: String,
     val state: String,
     val photoPath: String? = null
-)
+) : IRequest<Result<LocationDto>>
 
 /**
  * Handles the execution of the [SaveLocationCommand] to create or update a location.
@@ -45,9 +45,8 @@ data class SaveLocationCommand(
  */
 class SaveLocationCommandHandler(
     private val unitOfWork: IUnitOfWork,
-    private val mapper: LocationMapper,
     private val mediator: IMediator
-) : IRequestHandler<SaveLocationCommand, LocationDto> {
+) : IRequestHandler<SaveLocationCommand, Result<LocationDto>> {
 
     /**
      * Handles the process of saving a location by either creating a new location or updating an existing one.
@@ -56,115 +55,112 @@ class SaveLocationCommandHandler(
      * attempts to update the corresponding location. If the ID is not provided, a new location is created. The
      * method ensures that all changes are persisted to the database.
      *
-     * @param request The command containing the details of the location to save, including its title, description, coordinates,
-     * and optional photo path.
-     * @return A [Result] containing a [LocationDto] representing the saved location if the
-     * operation is successful; otherwise, a failure result with an appropriate error message.
+     * @param request The command containing the location data to save.
+     * @return A [Result] containing a [LocationDto] if the operation succeeds; otherwise, a
+     * failure result with an error message.
      * @throws CancellationException If the operation is cancelled.
      */
     override suspend fun handle(request: SaveLocationCommand): Result<LocationDto> {
         return try {
-            val location: Location
-
-            if (request.id != null) {
+            val location = if (request.id != null) {
                 // Update existing location
-                val existingLocationResult = unitOfWork.locations.getByIdAsync(request.id)
-                if (!existingLocationResult.isSuccess || existingLocationResult.data == null) {
+                val locationResult = unitOfWork.locations.getByIdAsync(request.id)
+                if (!locationResult.isSuccess || locationResult.data == null) {
                     mediator.publish(
                         LocationSaveErrorEvent(
-                            message = request.title,
+                            locationTitle = request.title,
                             errorType = LocationErrorType.DatabaseError,
-                            details = AppResources.locationErrorNotFound
+                            errorMessage = "Location not found"
                         )
                     )
-                    return Result.failure(AppResources.locationErrorNotFound)
+                    return Result.failure("Location not found")
                 }
 
-                location = existingLocationResult.data
-                location.updateDetails(request.title, request.description)
+                val existingLocation = locationResult.data!!
+                existingLocation.updateDetails(request.title, request.description)
 
-                val newCoordinate = Coordinate(request.latitude, request.longitude)
-                location.updateCoordinate(newCoordinate)
+                val coordinate = Coordinate.createValidated(request.latitude, request.longitude)
+                existingLocation.updateCoordinate(coordinate)
 
-                if (!request.photoPath.isNullOrEmpty()) {
-                    location.attachPhoto(request.photoPath)
+                if (!request.photoPath.isNullOrBlank()) {
+                    existingLocation.attachPhoto(request.photoPath)
+                } else {
+                    existingLocation.removePhoto()
                 }
 
-                val updateResult = unitOfWork.locations.updateAsync(location)
+                val updateResult = unitOfWork.locations.updateAsync(existingLocation)
                 if (!updateResult.isSuccess) {
                     mediator.publish(
                         LocationSaveErrorEvent(
-                            message = request.title,
+                            locationTitle = request.title,
                             errorType = LocationErrorType.DatabaseError,
-                            details = updateResult.errorMessage ?: "Update failed"
+                            errorMessage = updateResult.errorMessage ?: "Update failed"
                         )
                     )
-                    return Result.failure(AppResources.locationErrorUpdateFailed)
+                    return Result.failure("Failed to update location")
                 }
+
+                updateResult.data!!
             } else {
                 // Create new location
-                val coordinate = Coordinate(request.latitude, request.longitude)
+                val coordinate = Coordinate.createValidated(request.latitude, request.longitude)
                 val address = Address(request.city, request.state)
+                val newLocation = Location(request.title, request.description, coordinate, address)
 
-                location = Location(
-                    title = request.title,
-                    description = request.description,
-                    coordinate = coordinate,
-                    address = address
-                )
-
-                if (!request.photoPath.isNullOrEmpty()) {
-                    location.attachPhoto(request.photoPath)
+                if (!request.photoPath.isNullOrBlank()) {
+                    newLocation.attachPhoto(request.photoPath)
                 }
 
-                val createResult = unitOfWork.locations.createAsync(location)
-                if (!createResult.isSuccess || createResult.data == null) {
+                val createResult = unitOfWork.locations.createAsync(newLocation)
+                if (!createResult.isSuccess) {
                     mediator.publish(
                         LocationSaveErrorEvent(
-                            message = request.title,
+                            locationTitle = request.title,
                             errorType = LocationErrorType.DatabaseError,
-                            details = createResult.errorMessage ?: "Create failed"
+                            errorMessage = createResult.errorMessage ?: "Create failed"
                         )
                     )
-                    return Result.failure(AppResources.locationErrorCreateFailed)
+                    return Result.failure("Failed to create location")
                 }
+
+                createResult.data!!
             }
 
             unitOfWork.saveChangesAsync()
 
-            val locationDto = mapper.toDto(location)
+            val locationDto = LocationMapper.run { location.toDto() }
             Result.success(locationDto)
         } catch (ex: LocationDomainException) {
             when (ex.code) {
                 "DUPLICATE_TITLE" -> {
                     mediator.publish(
                         LocationSaveErrorEvent(
-                            message = request.title,
-                            errorType = LocationErrorType.DuplicateTitle,
-                            details = null
+                            locationTitle = request.title,
+                            errorType = LocationErrorType.ValidationError,
+                            errorMessage = ex.message ?: "Duplicate title"
                         )
                     )
-                    Result.failure(AppResources.getLocationErrorDuplicateTitle(request.title))
+                    Result.failure("A location with this title already exists")
                 }
-                "INVALID_COORDINATES" -> {
+                "INVALID_COORDINATE" -> {
                     mediator.publish(
                         LocationSaveErrorEvent(
-                            message = request.title,
-                            errorType = LocationErrorType.InvalidCoordinates,
-                            details = null
+                            locationTitle = request.title,
+                            errorType = LocationErrorType.ValidationError,
+                            errorMessage = ex.message ?: "Invalid coordinates"
                         )
                     )
-                    Result.failure(AppResources.locationErrorInvalidCoordinates)
+                    Result.failure("Invalid coordinate values provided")
                 }
                 else -> {
                     mediator.publish(
                         LocationSaveErrorEvent(
-                            message = request.title,
-                            errorType = LocationErrorType.NetworkError,
-                            details = ex.message
+                            locationTitle = request.title,
+                            errorType = LocationErrorType.DatabaseError,
+                            errorMessage = ex.message ?: "Domain exception"
                         )
                     )
-                    Result.failure(AppResources.getLocationErrorSaveFailed(ex.message ?: "Domain exception"))
+                    Result.failure("Failed to save location: ${ex.message ?: "Unknown error"}")
                 }
             }
         } catch (ex: CancellationException) {
@@ -172,12 +168,12 @@ class SaveLocationCommandHandler(
         } catch (ex: Exception) {
             mediator.publish(
                 LocationSaveErrorEvent(
-                    message = request.title,
-                    errorType = LocationErrorType.NetworkError,
-                    details = ex.message
+                    locationTitle = request.title,
+                    errorType = LocationErrorType.DatabaseError,
+                    errorMessage = ex.message ?: "System exception"
                 )
             )
-            Result.failure(AppResources.getLocationErrorSaveFailed(ex.message ?: "Unknown error"))
+            Result.failure("System error occurred: ${ex.message ?: "Unknown error"}")
         }
     }
 }

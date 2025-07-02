@@ -1,23 +1,23 @@
-// shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/commands/RemovePhotoCommandHandler.kt
+//shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/commands/RemovePhotoCommandHandler.kt
 package com.x3squaredcircles.pixmap.shared.application.commands
 
-import com.x3squaredcircles.pixmap.shared.application.common.interfaces.IUnitOfWork
+import com.x3squaredcircles.pixmap.shared.application.interfaces.IUnitOfWork
 import com.x3squaredcircles.pixmap.shared.application.common.models.Result
 import com.x3squaredcircles.pixmap.shared.application.dto.LocationDto
-import com.x3squaredcircles.pixmap.shared.application.events.`events/errors`.LocationSaveErrorEvent
-import com.x3squaredcircles.pixmap.shared.application.events.`events/errors`.LocationErrorType
+import com.x3squaredcircles.pixmap.shared.application.events.LocationSaveErrorEvent
+import com.x3squaredcircles.pixmap.shared.application.events.LocationErrorType
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IRequestHandler
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IMediator
-import com.x3squaredcircles.pixmap.shared.application.resources.AppResources
-import com.x3squaredcircles.pixmap.shared.domain.mappers.LocationMapper
-import kotlinx.coroutines.cancellation.CancellationException
+import com.x3squaredcircles.pixmap.shared.application.interfaces.IRequest
+import com.x3squaredcircles.pixmap.shared.application.mappers.LocationMapper
+import kotlinx.coroutines.CancellationException
 
 /**
  * Command to remove a photo from a location.
  */
 data class RemovePhotoCommand(
     val locationId: Int
-)
+) : IRequest<Result<LocationDto>>
 
 /**
  * Handles the removal of a photo from a location and updates the location's state in the data store.
@@ -28,9 +28,8 @@ data class RemovePhotoCommand(
  */
 class RemovePhotoCommandHandler(
     private val unitOfWork: IUnitOfWork,
-    private val mapper: LocationMapper,
     private val mediator: IMediator
-) : IRequestHandler<RemovePhotoCommand, LocationDto> {
+) : IRequestHandler<RemovePhotoCommand, Result<LocationDto>> {
 
     /**
      * Handles the removal of a photo from a location and updates the location in the data store.
@@ -47,44 +46,44 @@ class RemovePhotoCommandHandler(
             if (!locationResult.isSuccess || locationResult.data == null) {
                 mediator.publish(
                     LocationSaveErrorEvent(
-                        message = AppResources.getLocationErrorNotFoundById(request.locationId),
+                        locationTitle = "Location ID ${request.locationId}",
                         errorType = LocationErrorType.DatabaseError,
-                        details = AppResources.locationErrorNotFound
+                        errorMessage = "Location not found"
                     )
                 )
-                return Result.failure(AppResources.locationErrorNotFound)
+                return Result.failure("Location not found")
             }
 
-            val location = locationResult.data
+            val location = locationResult.data!!
             location.removePhoto()
 
             val updateResult = unitOfWork.locations.updateAsync(location)
             if (!updateResult.isSuccess) {
                 mediator.publish(
                     LocationSaveErrorEvent(
-                        message = location.title,
+                        locationTitle = location.title,
                         errorType = LocationErrorType.DatabaseError,
-                        details = updateResult.errorMessage ?: "Update failed"
+                        errorMessage = updateResult.errorMessage ?: "Update failed"
                     )
                 )
-                return Result.failure(AppResources.locationErrorUpdateFailed)
+                return Result.failure("Failed to update location")
             }
 
             unitOfWork.saveChangesAsync()
 
-            val locationDto = mapper.toDto(location)
+            val locationDto = LocationMapper.run { location.toDto() }
             Result.success(locationDto)
         } catch (ex: CancellationException) {
             throw ex
         } catch (ex: Exception) {
             mediator.publish(
                 LocationSaveErrorEvent(
-                    message = AppResources.getLocationErrorNotFoundById(request.locationId),
-                    errorType = LocationErrorType.NetworkError,
-                    details = ex.message ?: "Unknown error"
+                    locationTitle = "Location ID ${request.locationId}",
+                    errorType = LocationErrorType.DatabaseError,
+                    errorMessage = ex.message ?: "System exception"
                 )
             )
-            Result.failure(AppResources.getLocationErrorRemovePhotoFailed(ex.message ?: "Unknown error"))
+            Result.failure("System error occurred: ${ex.message ?: "Unknown error"}")
         }
     }
 }

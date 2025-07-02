@@ -1,9 +1,8 @@
-// shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/commands/DeleteLocationCommandValidator.kt
+//shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/commands/DeleteLocationCommandValidator.kt
 package com.x3squaredcircles.pixmap.shared.application.commands
 
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IValidator
-import com.x3squaredcircles.pixmap.shared.application.models.ValidationResult
-import com.x3squaredcircles.pixmap.shared.application.resources.AppResources
+import com.x3squaredcircles.pixmap.shared.application.common.models.ValidationResult
 
 /**
  * Provides validation logic for the [DeleteLocationCommand].
@@ -23,7 +22,7 @@ class DeleteLocationCommandValidator : IValidator<DeleteLocationCommand> {
 
         // Validate Id
         if (command.id <= 0) {
-            errors.add(AppResources.locationValidationErrorLocationIdRequired)
+            errors.add("Location ID must be greater than 0")
         }
 
         return if (errors.isEmpty()) {

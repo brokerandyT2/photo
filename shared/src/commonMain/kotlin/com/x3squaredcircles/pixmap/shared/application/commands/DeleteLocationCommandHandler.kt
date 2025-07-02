@@ -1,22 +1,14 @@
-// shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/commands/DeleteLocationCommandHandler.kt
+//shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/commands/DeleteLocationCommandHandler.kt
 package com.x3squaredcircles.pixmap.shared.application.commands
 
-import com.x3squaredcircles.pixmap.shared.application.common.interfaces.IUnitOfWork
+import com.x3squaredcircles.pixmap.shared.application.interfaces.IUnitOfWork
 import com.x3squaredcircles.pixmap.shared.application.common.models.Result
-import com.x3squaredcircles.pixmap.shared.application.events.`events/errors`.LocationSaveErrorEvent
-import com.x3squaredcircles.pixmap.shared.application.events.`events/errors`.LocationErrorType
+import com.x3squaredcircles.pixmap.shared.application.events.LocationSaveErrorEvent
+import com.x3squaredcircles.pixmap.shared.application.events.LocationErrorType
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IRequestHandler
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IMediator
-import com.x3squaredcircles.pixmap.shared.application.resources.AppResources
 import com.x3squaredcircles.pixmap.shared.domain.exceptions.LocationDomainException
-import kotlinx.coroutines.cancellation.CancellationException
-
-/**
- * Command to delete a location by its identifier.
- */
-data class DeleteLocationCommand(
-    val id: Int
-)
+import kotlinx.coroutines.CancellationException
 
 /**
  * Handles the deletion of a location by its identifier.
@@ -27,7 +19,7 @@ data class DeleteLocationCommand(
 class DeleteLocationCommandHandler(
     private val unitOfWork: IUnitOfWork,
     private val mediator: IMediator
-) : IRequestHandler<DeleteLocationCommand, Boolean> {
+) : IRequestHandler<DeleteLocationCommand, Result<Boolean>> {
 
     /**
      * Handles the deletion of a location by its identifier.
@@ -47,27 +39,27 @@ class DeleteLocationCommandHandler(
             if (!locationResult.isSuccess || locationResult.data == null) {
                 mediator.publish(
                     LocationSaveErrorEvent(
-                        message = AppResources.getLocationErrorNotFoundById(request.id),
+                        locationTitle = "Location ID ${request.id}",
                         errorType = LocationErrorType.DatabaseError,
-                        details = AppResources.locationErrorNotFound
+                        errorMessage = "Location not found"
                     )
                 )
-                return Result.failure(AppResources.locationErrorNotFound)
+                return Result.failure("Location not found")
             }
 
-            val location = locationResult.data
+            val location = locationResult.data!!
             location.delete()
 
             val updateResult = unitOfWork.locations.updateAsync(location)
             if (!updateResult.isSuccess) {
                 mediator.publish(
                     LocationSaveErrorEvent(
-                        message = location.title,
+                        locationTitle = location.title,
                         errorType = LocationErrorType.DatabaseError,
-                        details = updateResult.errorMessage ?: "Update failed"
+                        errorMessage = updateResult.errorMessage ?: "Update failed"
                     )
                 )
-                return Result.failure(AppResources.locationErrorUpdateFailed)
+                return Result.failure("Failed to update location")
             }
 
             unitOfWork.saveChangesAsync()
@@ -78,22 +70,22 @@ class DeleteLocationCommandHandler(
                 "LOCATION_IN_USE" -> {
                     mediator.publish(
                         LocationSaveErrorEvent(
-                            message = AppResources.getLocationErrorNotFoundById(request.id),
+                            locationTitle = "Location ID ${request.id}",
                             errorType = LocationErrorType.ValidationError,
-                            details = ex.message ?: "Location in use"
+                            errorMessage = ex.message ?: "Location in use"
                         )
                     )
-                    Result.failure(AppResources.locationErrorCannotDeleteInUse)
+                    Result.failure("Cannot delete location - it is in use")
                 }
                 else -> {
                     mediator.publish(
                         LocationSaveErrorEvent(
-                            message = AppResources.getLocationErrorNotFoundById(request.id),
+                            locationTitle = "Location ID ${request.id}",
                             errorType = LocationErrorType.DatabaseError,
-                            details = ex.message ?: "Domain exception"
+                            errorMessage = ex.message ?: "Domain exception"
                         )
                     )
-                    Result.failure(AppResources.getLocationErrorDeleteFailed(ex.message ?: "Domain exception"))
+                    Result.failure("Failed to delete location: ${ex.message ?: "Unknown error"}")
                 }
             }
         } catch (ex: CancellationException) {
@@ -101,12 +93,12 @@ class DeleteLocationCommandHandler(
         } catch (ex: Exception) {
             mediator.publish(
                 LocationSaveErrorEvent(
-                    message = AppResources.getLocationErrorNotFoundById(request.id),
+                    locationTitle = "Location ID ${request.id}",
                     errorType = LocationErrorType.DatabaseError,
-                    details = ex.message ?: "Unknown error"
+                    errorMessage = ex.message ?: "System exception"
                 )
             )
-            Result.failure(AppResources.getLocationErrorDeleteFailed(ex.message ?: "Unknown error"))
+            Result.failure("System error occurred: ${ex.message ?: "Unknown error"}")
         }
     }
 }

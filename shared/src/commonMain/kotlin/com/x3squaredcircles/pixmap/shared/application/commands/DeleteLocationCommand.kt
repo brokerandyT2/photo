@@ -1,35 +1,12 @@
-// shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/handlers/commands/DeleteLocationCommandHandler.kt
+//shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/commands/DeleteLocationCommand.kt
 package com.x3squaredcircles.pixmap.shared.application.commands
 
-import com.x3squaredcircles.pixmap.shared.application.commands.DeleteLocationCommand
-import com.x3squaredcircles.pixmap.shared.application.interfaces.IRequestHandler
-import com.x3squaredcircles.pixmap.shared.application.interfaces.repositories.ILocationRepository
+import com.x3squaredcircles.pixmap.shared.application.interfaces.IRequest
+import com.x3squaredcircles.pixmap.shared.application.common.models.Result
 
 /**
- * Handler for DeleteLocationCommand
+ * Command to delete a location by its identifier.
  */
-class DeleteLocationCommandHandler(
-    private val locationRepository: ILocationRepository
-) : IRequestHandler<DeleteLocationCommand, Boolean> {
-
-    override suspend fun handle(request: DeleteLocationCommand): Boolean {
-        val existingResult = locationRepository.getByIdAsync(request.id)
-
-        if (!existingResult.isSuccess) {
-            throw RuntimeException("Failed to get location: ${existingResult}")
-        }
-
-        val location = existingResult.getOrNull()
-            ?: throw IllegalArgumentException("Location with ID ${request.id} not found")
-
-        location.delete()
-
-        val result = locationRepository.updateAsync(location)
-
-        return if (result.isSuccess) {
-            true
-        } else {
-            throw RuntimeException("Failed to delete location: ${result}")
-        }
-    }
-}
+data class DeleteLocationCommand(
+    val id: Int
+) : IRequest<Result<Boolean>>
