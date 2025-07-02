@@ -1,4 +1,4 @@
-package com.x3squaredcircles.pixmap.shared.services
+package com.x3squaredcircles.pixmap.shared.application.interfaces.services
 
 import com.x3squaredcircles.pixmap.shared.common.Result
 import com.x3squaredcircles.pixmap.shared.domain.valueobjects.Coordinate

@@ -7,7 +7,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
-import kotlin.uuid.Uuid
+import kotlinx.uuid.UUID
+import kotlinx.uuid.generateUUID
 
 /**
  * Database initializer for KMM
@@ -352,7 +353,7 @@ class DatabaseInitializer(
                     add(Triple(MagicStrings.SubscriptionExpiration, Clock.System.now().toString(), "Subscription expiration date"))
                     add(Triple(MagicStrings.SubscriptionProductId, "premium_yearly_subscription", "Subscription product ID"))
                     add(Triple(MagicStrings.SubscriptionPurchaseDate, Clock.System.now().toString(), "Subscription purchase date"))
-                    add(Triple(MagicStrings.SubscriptionTransactionId, "debug_transaction_${Uuid.random()}", "Subscription transaction ID"))
+                    add(Triple(MagicStrings.SubscriptionTransactionId, "debug_transaction_${kotlinx.uuid.UUID.generateUUID()}", "Subscription transaction ID"))
                     add(Triple(MagicStrings.AdGivesHours, "24", "Hours of premium access granted per ad view"))
                     add(Triple(MagicStrings.LastUploadTimeStamp, Clock.System.now().toString(), "Last Time that data was backed up to cloud"))
                 } else {
@@ -511,13 +512,8 @@ class DatabaseInitializer(
         return true // Placeholder for debug detection
     }
 
-    companion object {
-        fun resetInitializationState() {
-            isInitialized = false
-            isInitializing = false
-            initializationTimestamp = null
-        }
-    }
+
+
 }
 
 // Data classes for initialization

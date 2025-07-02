@@ -1,4 +1,5 @@
-// shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/domain/events/LocationDeletedEvent.kt
+//shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/domain/events/LocationDeletedEvent.kt
+
 package com.x3squaredcircles.pixmap.shared.domain.events
 
 import com.x3squaredcircles.pixmap.shared.domain.common.DomainEvent
@@ -8,4 +9,9 @@ import com.x3squaredcircles.pixmap.shared.domain.common.DomainEvent
  */
 class LocationDeletedEvent(
     val locationId: Int
-) : DomainEvent()
+) : DomainEvent() {
+
+    init {
+        require(locationId > 0) { "LocationId must be greater than zero" }
+    }
+}

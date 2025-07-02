@@ -11,7 +11,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.x3squaredcircles.pixmap.R
-import com.x3squaredcircles.pixmap.shared.services.INotificationService
+import com.x3squaredcircles.pixmap.shared.application.interfaces.services.INotificationService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 

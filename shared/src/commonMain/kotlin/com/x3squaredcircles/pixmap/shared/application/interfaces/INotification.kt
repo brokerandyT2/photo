@@ -1,17 +1,12 @@
 // shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/interfaces/INotification.kt
 package com.x3squaredcircles.pixmap.shared.application.interfaces
 
+import com.x3squaredcircles.pixmap.shared.domain.interfaces.IDomainEvent
+
 /**
  * Marker interface for notifications that don't return a response
  */
-interface INotification
 
-/**
- * Handler interface for notifications
- */
-interface INotificationHandler<in TNotification : INotification> {
-    suspend fun handle(notification: TNotification)
-}
 
 /**
  * Event handler interface for domain events
@@ -53,11 +48,7 @@ interface IEventDispatcher : IEventPublisher, IEventSubscriber {
 /**
  * Base domain event interface
  */
-interface IDomainEvent : INotification {
-    val eventId: String
-    val occurredOn: kotlinx.datetime.Instant
-    val eventType: String
-}
+
 
 /**
  * Integration event interface for cross-boundary events

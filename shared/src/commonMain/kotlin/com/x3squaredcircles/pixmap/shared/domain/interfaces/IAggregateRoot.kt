@@ -1,4 +1,5 @@
-// shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/domain/interfaces/IAggregateRoot.kt
+//shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/domain/interfaces/IAggregateRoot.kt
+
 package com.x3squaredcircles.pixmap.shared.domain.interfaces
 
 /**

@@ -1,4 +1,5 @@
-// shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/domain/entities/Location.kt
+//shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/domain/entities/Location.kt
+
 package com.x3squaredcircles.pixmap.shared.domain.entities
 
 import com.x3squaredcircles.pixmap.shared.domain.common.AggregateRoot
@@ -9,10 +10,12 @@ import com.x3squaredcircles.pixmap.shared.domain.valueobjects.Address
 import com.x3squaredcircles.pixmap.shared.domain.valueobjects.Coordinate
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
+import kotlinx.serialization.Serializable
 
 /**
  * Location aggregate root
  */
+@Serializable
 class Location private constructor() : AggregateRoot() {
 
     private var _title: String = ""
@@ -22,9 +25,10 @@ class Location private constructor() : AggregateRoot() {
     private var _photoPath: String? = null
     private var _isDeleted: Boolean = false
     private var _timestamp: Instant = Clock.System.now()
+    private var _id: Int = 0
 
-    override var id: Int = 0
-        private set
+    override val id: Int
+        get() = _id
 
     val title: String
         get() = _title
@@ -87,5 +91,34 @@ class Location private constructor() : AggregateRoot() {
 
     fun restore() {
         _isDeleted = false
+    }
+
+    /**
+     * Internal method for setting ID (used by ORM/repository)
+     */
+    internal fun setId(newId: Int) {
+        require(newId > 0) { "Id must be greater than zero" }
+        _id = newId
+    }
+
+    /**
+     * Internal method for setting timestamp (used by ORM/repository)
+     */
+    internal fun setTimestamp(timestamp: Instant) {
+        _timestamp = timestamp
+    }
+
+    /**
+     * Internal method for setting deleted status (used by ORM/repository)
+     */
+    internal fun setDeleted(deleted: Boolean) {
+        _isDeleted = deleted
+    }
+
+    /**
+     * Internal method for setting photo path (used by ORM/repository)
+     */
+    internal fun setPhotoPath(path: String?) {
+        _photoPath = path
     }
 }

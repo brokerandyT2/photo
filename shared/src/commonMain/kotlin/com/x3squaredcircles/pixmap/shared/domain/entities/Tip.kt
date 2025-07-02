@@ -1,62 +1,95 @@
-// shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/domain/entities/Tip.kt
+//shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/domain/entities/Tip.kt
+
 package com.x3squaredcircles.pixmap.shared.domain.entities
 
 import com.x3squaredcircles.pixmap.shared.domain.common.Entity
+import kotlinx.serialization.Serializable
 
 /**
  * Photography tip entity
  */
-class Tip private constructor() : Entity() {
+@Serializable
+data class Tip(
+    override val id: Int = 0,
+    val tipTypeId: Int,
+    val title: String,
+    val content: String,
+    val fstop: String = "",
+    val shutterSpeed: String = "",
+    val iso: String = "",
+    val i8n: String = "en-US"
+) : Entity() {
 
-    private var _title: String = ""
-    private var _content: String = ""
-    private var _fstop: String = ""
-    private var _shutterSpeed: String = ""
-    private var _iso: String = ""
-
-    val tipTypeId: Int
-        get() = _tipTypeId
-
-    private var _tipTypeId: Int = 0
-
-    val title: String
-        get() = _title
-
-    val content: String
-        get() = _content
-
-    val fstop: String
-        get() = _fstop
-
-    val shutterSpeed: String
-        get() = _shutterSpeed
-
-    val iso: String
-        get() = _iso
-
-    var i8n: String = "en-US"
-        private set
-
-    constructor(tipTypeId: Int, title: String, content: String) : this() {
+    init {
         require(title.isNotBlank()) { "Title cannot be empty" }
-        _tipTypeId = tipTypeId
-        _title = title
-        _content = content
+        require(tipTypeId > 0) { "TipTypeId must be greater than zero" }
     }
 
-    fun updatePhotographySettings(fstop: String?, shutterSpeed: String?, iso: String?) {
-        _fstop = fstop ?: ""
-        _shutterSpeed = shutterSpeed ?: ""
-        _iso = iso ?: ""
+    companion object {
+        /**
+         * Factory method to create a new tip
+         */
+        fun create(tipTypeId: Int, title: String, content: String): Tip {
+            return Tip(
+                tipTypeId = tipTypeId,
+                title = title,
+                content = content
+            )
+        }
     }
 
-    fun updateContent(title: String, content: String) {
-        require(title.isNotBlank()) { "Title cannot be empty" }
-        _title = title
-        _content = content
+    /**
+     * Updates the photography settings for this tip
+     */
+    fun updatePhotographySettings(fstop: String, shutterSpeed: String, iso: String): Tip {
+        return copy(
+            fstop = fstop,
+            shutterSpeed = shutterSpeed,
+            iso = iso
+        )
     }
 
-    fun setLocalization(i8n: String?) {
-        this.i8n = i8n ?: "en-US"
+    /**
+     * Updates the title and content of this tip
+     */
+    fun updateContent(newTitle: String, newContent: String): Tip {
+        require(newTitle.isNotBlank()) { "Title cannot be empty" }
+        return copy(
+            title = newTitle,
+            content = newContent
+        )
+    }
+
+    /**
+     * Sets the localization for this tip
+     */
+    fun setLocalization(localization: String): Tip {
+        return copy(i8n = localization.ifBlank { "en-US" })
+    }
+
+    /**
+     * Gets a formatted string of the photography settings
+     */
+    fun getPhotographySettingsDisplay(): String {
+        val parts = mutableListOf<String>()
+
+        if (fstop.isNotBlank()) {
+            parts.add("F: $fstop")
+        }
+        if (shutterSpeed.isNotBlank()) {
+            parts.add("Shutter: $shutterSpeed")
+        }
+        if (iso.isNotBlank()) {
+            parts.add("ISO: $iso")
+        }
+
+        return parts.joinToString(" ")
+    }
+
+    /**
+     * Checks if this tip has photography settings
+     */
+    fun hasPhotographySettings(): Boolean {
+        return fstop.isNotBlank() || shutterSpeed.isNotBlank() || iso.isNotBlank()
     }
 }

@@ -3,8 +3,8 @@ package com.x3squaredcircles.pixmap.shared.application.settings
 
 import com.x3squaredcircles.pixmap.shared.application.common.interfaces.IUnitOfWork
 import com.x3squaredcircles.pixmap.shared.application.common.models.Result
-import com.x3squaredcircles.pixmap.shared.application.events.errors.SettingErrorEvent
-import com.x3squaredcircles.pixmap.shared.application.events.errors.SettingErrorType
+import com.x3squaredcircles.pixmap.shared.application.events.`events/errors`.SettingErrorEvent
+import com.x3squaredcircles.pixmap.shared.application.events.`events/errors`.SettingErrorType
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IRequestHandler
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IMediator
 import com.x3squaredcircles.pixmap.shared.application.resources.AppResources

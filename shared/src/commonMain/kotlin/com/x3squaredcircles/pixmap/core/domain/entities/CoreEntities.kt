@@ -1,5 +1,8 @@
 package com.x3squaredcircles.pixmap.core.domain.entities
 
+import com.x3squaredcircles.pixmap.shared.domain.common.DomainEvent
+import com.x3squaredcircles.pixmap.shared.domain.events.LocationDeletedEvent
+import com.x3squaredcircles.pixmap.shared.domain.events.LocationSavedEvent
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
 import kotlinx.serialization.Serializable
@@ -50,10 +53,7 @@ abstract class AggregateRoot : Entity() {
     }
 }
 
-@Serializable
-abstract class DomainEvent {
-    val dateOccurred: Instant = Clock.System.now()
-}
+
 
 // Value Objects
 @Serializable
@@ -307,28 +307,6 @@ data class Tip(
     }
 }
 
-// Domain Events
-@Serializable
-data class LocationSavedEvent(
-    val location: Location
-) : DomainEvent()
-
-@Serializable
-data class LocationDeletedEvent(
-    val locationId: Int
-) : DomainEvent()
-
-@Serializable
-data class PhotoAttachedEvent(
-    val locationId: Int,
-    val photoPath: String
-) : DomainEvent()
-
-@Serializable
-data class WeatherUpdatedEvent(
-    val locationId: Int,
-    val updateTime: Instant
-) : DomainEvent()
 
 // Domain Exceptions
 sealed class DomainException(message: String, val code: String) : Exception(message)

@@ -1,41 +1,69 @@
-// shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/domain/entities/TipType.kt
+//shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/domain/entities/TipType.kt
+
 package com.x3squaredcircles.pixmap.shared.domain.entities
 
 import com.x3squaredcircles.pixmap.shared.domain.common.Entity
+import kotlinx.serialization.Serializable
 
 /**
  * Tip category entity
  */
-class TipType private constructor() : Entity() {
+@Serializable
+data class TipType(
+    override val id: Int = 0,
+    val name: String,
+    val i8n: String = "en-US"
+) : Entity() {
 
-    private var _name: String = ""
-    private val _tips = mutableListOf<Tip>()
-
-    val name: String
-        get() = _name
-
-    var i8n: String = "en-US"
-        private set
-
-    val tips: List<Tip> = _tips
-
-    constructor(name: String) : this() {
+    init {
         require(name.isNotBlank()) { "Name cannot be empty" }
-        _name = name
     }
 
-    fun setLocalization(i8n: String?) {
-        this.i8n = i8n ?: "en-US"
-    }
-
-    fun addTip(tip: Tip) {
-        if (tip.tipTypeId != id && id > 0) {
-            throw IllegalStateException("Tip type ID mismatch")
+    companion object {
+        /**
+         * Factory method to create a new tip type
+         */
+        fun create(name: String): TipType {
+            return TipType(name = name)
         }
-        _tips.add(tip)
+
+        /**
+         * Creates a tip type with localization
+         */
+        fun create(name: String, localization: String): TipType {
+            return TipType(
+                name = name,
+                i8n = localization.ifBlank { "en-US" }
+            )
+        }
     }
 
-    fun removeTip(tip: Tip) {
-        _tips.remove(tip)
+    /**
+     * Sets the localization for this tip type
+     */
+    fun setLocalization(localization: String): TipType {
+        return copy(i8n = localization.ifBlank { "en-US" })
+    }
+
+    /**
+     * Updates the name of this tip type
+     */
+    fun updateName(newName: String): TipType {
+        require(newName.isNotBlank()) { "Name cannot be empty" }
+        return copy(name = newName)
+    }
+
+    /**
+     * Checks if this tip type has a specific localization
+     */
+    fun hasLocalization(localization: String): Boolean {
+        return i8n.equals(localization, ignoreCase = true)
+    }
+
+    /**
+     * Gets the display name based on localization
+     */
+    fun getDisplayName(): String {
+        return name
     }
 }

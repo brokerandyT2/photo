@@ -11,8 +11,8 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import com.x3squaredcircles.pixmap.shared.application.interfaces.services.ICameraService
 import com.x3squaredcircles.pixmap.shared.common.Result
-import com.x3squaredcircles.pixmap.shared.services.ICameraService
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.File
 import java.text.SimpleDateFormat

@@ -1,5 +1,5 @@
 // shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/events/errors/DomainErrorEvent.kt
-package com.x3squaredcircles.pixmap.shared.application.events.errors
+package com.x3squaredcircles.pixmap.shared.application.events.`events/errors`
 
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant

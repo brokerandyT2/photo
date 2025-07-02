@@ -1,124 +1,172 @@
-// shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/domain/entities/HourlyForecast.kt
+//shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/domain/entities/HourlyForecast.kt
+
 package com.x3squaredcircles.pixmap.shared.domain.entities
 
 import com.x3squaredcircles.pixmap.shared.domain.common.Entity
 import com.x3squaredcircles.pixmap.shared.domain.valueobjects.WindInfo
 import kotlinx.datetime.Instant
+import kotlinx.serialization.Serializable
 
 /**
  * Individual weather forecast for a single hour
  */
-class HourlyForecast private constructor() : Entity() {
-
-    val weatherId: Int
-        get() = _weatherId
-
-    private var _weatherId: Int = 0
-
-    val dateTime: Instant
-        get() = _dateTime
-
-    private var _dateTime: Instant = Instant.DISTANT_PAST
-
-    val temperature: Double
-        get() = _temperature
-
-    private var _temperature: Double = 0.0
-
-    val feelsLike: Double
-        get() = _feelsLike
-
-    private var _feelsLike: Double = 0.0
-
-    val description: String
-        get() = _description
-
-    private var _description: String = ""
-
-    val icon: String
-        get() = _icon
-
-    private var _icon: String = ""
-
-    val wind: WindInfo
-        get() = _wind
-
-    private var _wind: WindInfo? = null
-
-    val humidity: Int
-        get() = _humidity
-
-    private var _humidity: Int = 0
-
-    val pressure: Int
-        get() = _pressure
-
-    private var _pressure: Int = 0
-
-    val clouds: Int
-        get() = _clouds
-
-    private var _clouds: Int = 0
-
-    val uvIndex: Double
-        get() = _uvIndex
-
-    private var _uvIndex: Double = 0.0
-
-    val probabilityOfPrecipitation: Double
-        get() = _probabilityOfPrecipitation
-
-    private var _probabilityOfPrecipitation: Double = 0.0
-
-    val visibility: Int
-        get() = _visibility
-
-    private var _visibility: Int = 0
-
+@Serializable
+data class HourlyForecast(
+    override val id: Int = 0,
+    val weatherId: Int,
+    val dateTime: Instant,
+    val temperature: Double,
+    val feelsLike: Double,
+    val description: String = "",
+    val icon: String = "",
+    val wind: WindInfo,
+    val humidity: Int,
+    val pressure: Int,
+    val clouds: Int,
+    val uvIndex: Double,
+    val probabilityOfPrecipitation: Double,
+    val visibility: Int,
     val dewPoint: Double
-        get() = _dewPoint
+) : Entity() {
 
-    private var _dewPoint: Double = 0.0
-
-    constructor(
-        weatherId: Int,
-        dateTime: Instant,
-        temperature: Double,
-        feelsLike: Double,
-        description: String,
-        icon: String,
-        wind: WindInfo,
-        humidity: Int,
-        pressure: Int,
-        clouds: Int,
-        uvIndex: Double,
-        probabilityOfPrecipitation: Double,
-        visibility: Int,
-        dewPoint: Double
-    ) : this() {
-        _weatherId = weatherId
-        _dateTime = dateTime
-        _temperature = temperature
-        _feelsLike = feelsLike
-        _description = description
-        _icon = icon
-        _wind = wind
-        _humidity = validatePercentage(humidity, "humidity")
-        _pressure = pressure
-        _clouds = validatePercentage(clouds, "clouds")
-        _uvIndex = maxOf(0.0, uvIndex)
-        _probabilityOfPrecipitation = validateProbability(probabilityOfPrecipitation, "probabilityOfPrecipitation")
-        _visibility = maxOf(0, visibility)
-        _dewPoint = dewPoint
+    init {
+        require(weatherId > 0) { "WeatherId must be greater than zero" }
+        require(temperature >= -273.15) { "Temperature cannot be below absolute zero" }
+        require(feelsLike >= -273.15) { "Feels like temperature cannot be below absolute zero" }
+        require(humidity in 0..100) { "Humidity must be between 0 and 100" }
+        require(pressure > 0) { "Pressure must be positive" }
+        require(clouds in 0..100) { "Clouds must be between 0 and 100" }
+        require(uvIndex >= 0) { "UV Index cannot be negative" }
+        require(probabilityOfPrecipitation in 0.0..1.0) { "Probability of precipitation must be between 0 and 1" }
+        require(visibility >= 0) { "Visibility cannot be negative" }
     }
 
-    private fun validatePercentage(value: Int, paramName: String): Int {
-        require(value in 0..100) { "Percentage $paramName must be between 0 and 100" }
-        return value
+    companion object {
+        /**
+         * Factory method to create an hourly forecast
+         */
+        fun create(
+            weatherId: Int,
+            dateTime: Instant,
+            temperature: Double,
+            feelsLike: Double,
+            description: String,
+            icon: String,
+            wind: WindInfo,
+            humidity: Int,
+            pressure: Int,
+            clouds: Int,
+            uvIndex: Double,
+            probabilityOfPrecipitation: Double,
+            visibility: Int,
+            dewPoint: Double
+        ): HourlyForecast {
+            return HourlyForecast(
+                weatherId = weatherId,
+                dateTime = dateTime,
+                temperature = temperature,
+                feelsLike = feelsLike,
+                description = description,
+                icon = icon,
+                wind = wind,
+                humidity = humidity,
+                pressure = pressure,
+                clouds = clouds,
+                uvIndex = uvIndex,
+                probabilityOfPrecipitation = probabilityOfPrecipitation,
+                visibility = visibility,
+                dewPoint = dewPoint
+            )
+        }
     }
 
-    private fun validateProbability(value: Double, paramName: String): Double {
-        require(value in 0.0..1.0) { "Probability $paramName must be between 0 and 1" }
-        return value
+    /**
+     * Gets the temperature difference between actual and feels like
+     */
+    fun getTemperatureDifference(): Double {
+        return feelsLike - temperature
+    }
+
+    /**
+     * Gets a comfort description based on feels like temperature
+     */
+    fun getComfortDescription(): String {
+        return when {
+            feelsLike < -10 -> "Dangerously Cold"
+            feelsLike < 0 -> "Very Cold"
+            feelsLike < 10 -> "Cold"
+            feelsLike < 20 -> "Cool"
+            feelsLike < 25 -> "Comfortable"
+            feelsLike < 30 -> "Warm"
+            feelsLike < 35 -> "Hot"
+            feelsLike < 40 -> "Very Hot"
+            else -> "Dangerously Hot"
+        }
+    }
+
+    /**
+     * Gets visibility description
+     */
+    fun getVisibilityDescription(): String {
+        return when {
+            visibility >= 10000 -> "Excellent (${visibility / 1000}+ km)"
+            visibility >= 5000 -> "Good (${visibility / 1000} km)"
+            visibility >= 2000 -> "Moderate (${visibility / 1000} km)"
+            visibility >= 1000 -> "Poor (${visibility} m)"
+            else -> "Very Poor (${visibility} m)"
+        }
+    }
+
+    /**
+     * Gets precipitation probability as percentage
+     */
+    fun getPrecipitationPercentage(): Int {
+        return (probabilityOfPrecipitation * 100).toInt()
+    }
+
+    /**
+     * Checks if rain is likely (>50% probability)
+     */
+    fun isRainLikely(): Boolean {
+        return probabilityOfPrecipitation > 0.5
+    }
+
+    /**
+     * Checks if conditions are good for outdoor activities
+     */
+    fun isGoodForOutdoor(): Boolean {
+        return probabilityOfPrecipitation < 0.3 &&
+                wind.speed < 25.0 &&
+                visibility > 5000 &&
+                temperature > 5 &&
+                temperature < 35
+    }
+
+    /**
+     * Gets a short weather summary
+     */
+    fun getShortSummary(): String {
+        val temp = "${temperature.toInt()}°"
+        val feels = if (kotlin.math.abs(getTemperatureDifference()) > 2) {
+            " (feels ${feelsLike.toInt()}°)"
+        } else ""
+        return "$description, $temp$feels"
+    }
+
+    /**
+     * Gets detailed weather information
+     */
+    fun getDetailedInfo(): String {
+        return buildString {
+            append("${description}, ${temperature.toInt()}°")
+            if (kotlin.math.abs(getTemperatureDifference()) > 2) {
+                append(" (feels ${feelsLike.toInt()}°)")
+            }
+            append(", ${wind.toSimpleString()}")
+            append(", ${humidity}% humidity")
+            if (probabilityOfPrecipitation > 0.1) {
+                append(", ${getPrecipitationPercentage()}% chance rain")
+            }
+        }
     }
 }

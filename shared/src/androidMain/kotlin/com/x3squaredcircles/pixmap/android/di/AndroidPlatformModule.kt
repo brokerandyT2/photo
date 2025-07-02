@@ -2,7 +2,11 @@
 package com.x3squaredcircles.pixmap.android.di
 
 import com.x3squaredcircles.pixmap.android.services.*
-import com.x3squaredcircles.pixmap.shared.application.interfaces.services.*
+import com.x3squaredcircles.pixmap.shared.application.interfaces.services.ICameraService
+import com.x3squaredcircles.pixmap.shared.application.interfaces.services.IFileService
+import com.x3squaredcircles.pixmap.shared.application.interfaces.services.ILocationService
+import com.x3squaredcircles.pixmap.shared.application.interfaces.services.INotificationService
+import com.x3squaredcircles.pixmap.shared.services.IWeatherService
 import io.ktor.client.*
 import io.ktor.client.engine.android.*
 import io.ktor.client.plugins.contentnegotiation.*
@@ -27,21 +31,26 @@ val androidPlatformModule = module {
                 })
             }
             install(Logging) {
-                level = LogLevel.INFO
+                logger = object : Logger {
+                    override fun log(message: String) {
+                        android.util.Log.d("Ktor", message)
+                    }
+                }
+                level = LogLevel.ALL
             }
         }
     }
 
-    // Platform Services - using bind() for interface binding
-    single { AndroidCameraService(androidContext()) } bind ICameraService::class
-    single { AndroidLocationService(androidContext()) } bind ILocationService::class
-    single { AndroidFileService(androidContext()) } bind IFileService::class
-    single { AndroidNotificationService(androidContext()) } bind INotificationService::class
-    single {
+    // Platform Services
+    single<ICameraService> { AndroidCameraService(androidContext()) }
+    single<ILocationService> { AndroidLocationService(androidContext()) }
+    single<IFileService> { AndroidFileService(androidContext()) }
+    single<INotificationService> { AndroidNotificationService(androidContext()) }
+    single<IWeatherService> {
         AndroidWeatherService(
             httpClient = get(),
-            apiKey = "your_openweather_api_key", // Should come from BuildConfig or environment
+            apiKey = "your_openweather_api_key",
             baseUrl = "https://api.openweathermap.org/data/2.5"
         )
-    } bind IWeatherService::class
+    }
 }

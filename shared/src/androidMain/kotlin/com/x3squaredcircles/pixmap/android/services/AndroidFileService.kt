@@ -3,7 +3,7 @@ package com.x3squaredcircles.pixmap.android.services
 import android.content.Context
 import com.x3squaredcircles.pixmap.shared.common.Constants
 import com.x3squaredcircles.pixmap.shared.common.Result
-import com.x3squaredcircles.pixmap.shared.services.IFileService
+import com.x3squaredcircles.pixmap.shared.application.interfaces.services.IFileService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File

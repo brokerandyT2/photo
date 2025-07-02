@@ -97,14 +97,14 @@ class LoggingBehavior<TRequest : IRequest<TResponse>, TResponse>(
      */
     private suspend fun serializeRequestAsync(request: TRequest): String {
         return try {
-            // Use compact serialization for performance
-            val json = compactJson.encodeToString(request)
+            // Use toString() for generic types since we can't guarantee serializability
+            val serializedContent = request.toString()
 
             // Truncate if too long to prevent memory issues
-            if (json.length > MAX_SERIALIZATION_LENGTH) {
-                "${json.substring(0, MAX_SERIALIZATION_LENGTH)}... (truncated)"
+            if (serializedContent.length > MAX_SERIALIZATION_LENGTH) {
+                "${serializedContent.substring(0, MAX_SERIALIZATION_LENGTH)}... (truncated)"
             } else {
-                json
+                serializedContent
             }
         } catch (exception: Exception) {
             // Fallback to type name if serialization fails

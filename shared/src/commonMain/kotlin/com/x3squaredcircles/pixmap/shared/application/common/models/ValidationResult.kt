@@ -1,4 +1,4 @@
-package com.x3squaredcircles.pixmap.shared.common
+package com.x3squaredcircles.pixmap.shared.application.common.models
 
 /**
  * Represents the result of a validation operation

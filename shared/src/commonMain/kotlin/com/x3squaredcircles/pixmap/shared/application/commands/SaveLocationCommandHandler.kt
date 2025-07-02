@@ -4,8 +4,8 @@ package com.x3squaredcircles.pixmap.shared.application.commands
 import com.x3squaredcircles.pixmap.shared.application.common.interfaces.IUnitOfWork
 import com.x3squaredcircles.pixmap.shared.application.common.models.Result
 import com.x3squaredcircles.pixmap.shared.application.dto.LocationDto
-import com.x3squaredcircles.pixmap.shared.application.events.errors.LocationSaveErrorEvent
-import com.x3squaredcircles.pixmap.shared.application.events.errors.LocationErrorType
+import com.x3squaredcircles.pixmap.shared.application.events.`events/errors`.LocationSaveErrorEvent
+import com.x3squaredcircles.pixmap.shared.application.events.`events/errors`.LocationErrorType
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IRequestHandler
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IMediator
 import com.x3squaredcircles.pixmap.shared.application.resources.AppResources

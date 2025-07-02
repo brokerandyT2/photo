@@ -12,7 +12,7 @@ import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
 import com.x3squaredcircles.pixmap.shared.common.Result
 import com.x3squaredcircles.pixmap.shared.domain.valueobjects.Coordinate
-import com.x3squaredcircles.pixmap.shared.services.ILocationService
+import com.x3squaredcircles.pixmap.shared.application.interfaces.services.ILocationService
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 
@@ -44,20 +44,20 @@ class AndroidLocationService(
                             val coordinate = Coordinate.createValidated(location.latitude, location.longitude)
                             continuation.resume(Result.success(coordinate))
                         } catch (e: Exception) {
-                            continuation.resume(Result.failure(e))
+                            continuation.resume(Result.error(e))
                         }
                     } else {
-                        continuation.resume(Result.failure(Exception("Unable to get current location")))
+                        continuation.resume(Result.error(Exception("Unable to get current location")))
                     }
                 }.addOnFailureListener { exception ->
-                    continuation.resume(Result.failure(exception))
+                    continuation.resume(Result.error(exception))
                 }
             }
         } else {
             when {
-                !hasPermission() -> Result.failure(Exception("Location permission not granted"))
-                !isLocationEnabled() -> Result.failure(Exception("Location services disabled"))
-                else -> Result.failure(Exception("Unknown location error"))
+                !hasPermission() -> Result.error(Exception("Location permission not granted"))
+                !isLocationEnabled() -> Result.error(Exception("Location services disabled"))
+                else -> Result.error(Exception("Unknown location error"))
             }
         }
     }
@@ -72,18 +72,18 @@ class AndroidLocationService(
                                 val coordinate = Coordinate.createValidated(location.latitude, location.longitude)
                                 continuation.resume(Result.success(coordinate))
                             } catch (e: Exception) {
-                                continuation.resume(Result.failure(e))
+                                continuation.resume(Result.error(e))
                             }
                         } else {
-                            continuation.resume(Result.failure(Exception("No last known location available")))
+                            continuation.resume(Result.error(Exception("No last known location available")))
                         }
                     }
                     .addOnFailureListener { exception ->
-                        continuation.resume(Result.failure(exception))
+                        continuation.resume(Result.error(exception))
                     }
             }
         } else {
-            Result.failure(Exception("Location permission not granted"))
+            Result.error(Exception("Location permission not granted"))
         }
     }
 

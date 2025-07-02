@@ -2,7 +2,7 @@
 package com.x3squaredcircles.pixmap.shared.application.behaviors
 
 import com.x3squaredcircles.pixmap.shared.application.common.models.ValidationResult
-import com.x3squaredcircles.pixmap.shared.application.events.errors.ValidationErrorEvent
+import com.x3squaredcircles.pixmap.shared.application.events.ValidationErrorEvent
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IMediator
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IPipelineBehavior
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IRequest

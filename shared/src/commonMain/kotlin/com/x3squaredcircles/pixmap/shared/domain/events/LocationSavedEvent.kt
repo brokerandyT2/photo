@@ -1,4 +1,5 @@
-// shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/domain/events/LocationSavedEvent.kt
+//shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/domain/events/LocationSavedEvent.kt
+
 package com.x3squaredcircles.pixmap.shared.domain.events
 
 import com.x3squaredcircles.pixmap.shared.domain.common.DomainEvent
@@ -9,4 +10,9 @@ import com.x3squaredcircles.pixmap.shared.domain.entities.Location
  */
 class LocationSavedEvent(
     val location: Location
-) : DomainEvent()
+) : DomainEvent() {
+
+    init {
+        require(location != null) { "Location cannot be null" }
+    }
+}

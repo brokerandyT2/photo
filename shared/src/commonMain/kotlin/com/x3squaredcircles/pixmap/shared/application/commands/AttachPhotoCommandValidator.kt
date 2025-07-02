@@ -2,8 +2,7 @@
 package com.x3squaredcircles.pixmap.shared.application.commands
 
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IValidator
-import com.x3squaredcircles.pixmap.shared.application.models.ValidationResult
-import com.x3squaredcircles.pixmap.shared.application.resources.AppResources
+import com.x3squaredcircles.pixmap.shared.application.common.models.ValidationResult
 
 /**
  * Validates the [AttachPhotoCommand] to ensure that all required properties meet the specified rules.
@@ -28,14 +27,14 @@ class AttachPhotoCommandValidator : IValidator<AttachPhotoCommand> {
 
         // Validate LocationId
         if (command.locationId <= 0) {
-            errors.add(AppResources.locationValidationErrorLocationIdRequired)
+            errors.add("Location ID is required and must be greater than 0")
         }
 
         // Validate PhotoPath
         if (command.photoPath.isBlank()) {
-            errors.add(AppResources.locationValidationErrorPhotoPathRequired)
+            errors.add("Photo path is required")
         } else if (!isValidPath(command.photoPath)) {
-            errors.add(AppResources.locationValidationErrorPhotoPathInvalid)
+            errors.add("Photo path contains invalid characters")
         }
 
         return if (errors.isEmpty()) {

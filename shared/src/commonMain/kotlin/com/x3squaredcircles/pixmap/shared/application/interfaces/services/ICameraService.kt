@@ -1,9 +1,10 @@
-package com.x3squaredcircles.pixmap.shared.services
+//shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/interfaces/services/ICameraService.kt
+package com.x3squaredcircles.pixmap.shared.application.interfaces.services
 
 import com.x3squaredcircles.pixmap.shared.common.Result
 
 /**
- * Interface for camera operations
+ * Camera service interface for photo capture and gallery selection
  */
 interface ICameraService {
     suspend fun capturePhoto(): Result<String>

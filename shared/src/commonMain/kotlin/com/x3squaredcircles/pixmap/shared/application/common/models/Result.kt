@@ -72,7 +72,7 @@ sealed class Result<out T> {
         /**
          * Creates a failure result with single error
          */
-        fun <T> failure(error: Error): Result<T> = Failure(error.message, listOf(error))
+        fun <T> failure(error: Error): Result<T> = Failure(error.message.toString(), listOf(error))
     }
 }
 
