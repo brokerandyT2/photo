@@ -4,14 +4,36 @@ package com.x3squaredcircles.pixmap.shared.domain.exceptions
 /**
  * Exception thrown when invalid coordinates are provided
  */
-class InvalidCoordinateException(
-    val latitude: Double,
-    val longitude: Double,
-    message: String = "Invalid coordinates: Latitude=$latitude, Longitude=$longitude"
-) : LocationDomainException("INVALID_COORDINATES", message) {
+class InvalidCoordinateException : LocationDomainException {
 
-    override fun getUserFriendlyMessage(): String {
-        return "The coordinates (${String.format("%.6f", latitude)}, ${String.format("%.6f", longitude)}) are invalid. " +
-                "Latitude must be between -90 and 90, and longitude must be between -180 and 180."
+    val latitude: Double
+    val longitude: Double
+
+    /**
+     * Initializes a new instance of the InvalidCoordinateException class with the specified latitude
+     * and longitude values.
+     * @param latitude The latitude value that caused the exception. Must be within the valid range of -90 to 90.
+     * @param longitude The longitude value that caused the exception. Must be within the valid range of -180 to 180.
+     */
+    constructor(latitude: Double, longitude: Double) : super(
+        "INVALID_COORDINATE",
+        "Invalid coordinates: Latitude=$latitude, Longitude=$longitude"
+    ) {
+        this.latitude = latitude
+        this.longitude = longitude
+    }
+
+    /**
+     * Represents an exception that is thrown when an invalid geographic coordinate is encountered.
+     * @param latitude The latitude value that caused the exception. Must be in the range -90 to 90.
+     * @param longitude The longitude value that caused the exception. Must be in the range -180 to 180.
+     * @param message A message that describes the error.
+     */
+    constructor(latitude: Double, longitude: Double, message: String) : super(
+        "INVALID_COORDINATE",
+        message
+    ) {
+        this.latitude = latitude
+        this.longitude = longitude
     }
 }

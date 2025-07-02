@@ -1,113 +1,81 @@
 // shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/common/models/Result.kt
 package com.x3squaredcircles.pixmap.shared.application.common.models
 
+import com.x3squaredcircles.pixmap.shared.application.common.interfaces.IResult
+import com.x3squaredcircles.pixmap.shared.domain.exceptions.LocationDomainException
+
 /**
- * Represents the result of an operation that can either succeed or fail
+ * Represents an error in the application
  */
-sealed class Result<out T> {
+data class Error(
+    val code: String,
+    val message: String,
+    val propertyName: String? = null
+) {
+    companion object {
+        fun validation(propertyName: String, message: String): Error =
+            Error("VALIDATION_ERROR", message, propertyName)
 
-    abstract val isSuccess: Boolean
-    abstract val isFailure: Boolean
+        fun notFound(message: String): Error =
+            Error("NOT_FOUND", message)
 
-    /**
-     * Successful result containing data
-     */
-    data class Success<T>(val data: T) : Result<T>() {
-        override val isSuccess: Boolean = true
-        override val isFailure: Boolean = false
+        fun database(message: String): Error =
+            Error("DATABASE_ERROR", message)
+
+        fun domain(message: String): Error =
+            Error("DOMAIN_ERROR", message)
     }
+}
 
-    /**
-     * Failed result containing error information
-     */
-    data class Failure(
-        val errorMessage: String,
-        val errors: List<Error> = emptyList()
-    ) : Result<Nothing>() {
-        override val isSuccess: Boolean = false
-        override val isFailure: Boolean = true
-    }
-
-    /**
-     * Gets the data if successful, null otherwise
-     */
-    fun getOrNull(): T? = when (this) {
-        is Success -> data
-        is Failure -> null
-    }
-
-    /**
-     * Gets the data if successful, throws exception otherwise
-     */
-    fun getOrThrow(): T = when (this) {
-        is Success -> data
-        is Failure -> throw RuntimeException(errorMessage)
-    }
-
-    /**
-     * Gets the error message if failed, null otherwise
-     */
-    fun getErrorOrNull(): String? = when (this) {
-        is Success -> null
-        is Failure -> errorMessage
-    }
+/**
+ * Implementation of operation result
+ */
+open class Result(
+    override val isSuccess: Boolean,
+    override val errorMessage: String?,
+    override val errors: List<Error>
+) : IResult {
 
     companion object {
-        /**
-         * Creates a successful result
-         */
-        fun <T> success(data: T): Result<T> = Success(data)
+        fun success(): Result = Result(true, null, emptyList())
 
-        /**
-         * Creates a failure result with error message
-         */
-        fun <T> failure(errorMessage: String): Result<T> = Failure(errorMessage)
+        fun failure(errorMessage: String): Result =
+            Result(false, errorMessage, emptyList())
 
-        /**
-         * Creates a failure result with multiple errors
-         */
+        fun failure(errors: List<Error>): Result =
+            Result(false, null, errors)
+
+        fun failure(error: Error): Result =
+            Result(false, null, listOf(error))
+    }
+}
+
+/**
+ * Generic implementation of operation result with data
+ */
+class Result<T>(
+    isSuccess: Boolean,
+    override val data: T?,
+    errorMessage: String?,
+    errors: List<Error>
+) : Result(isSuccess, errorMessage, errors), IResult<T> {
+
+    companion object {
+        fun <T> success(data: T): Result<T> =
+            Result(true, data, null, emptyList())
+
+        fun <T> failure(errorMessage: String): Result<T> =
+            Result(false, null, errorMessage, emptyList())
+
         fun <T> failure(errors: List<Error>): Result<T> =
-            Failure(errors.firstOrNull()?.message ?: "Unknown error", errors)
+            Result(false, null, null, errors)
 
-        /**
-         * Creates a failure result with single error
-         */
-        fun <T> failure(error: Error): Result<T> = Failure(error.message.toString(), listOf(error))
+        fun <T> failure(error: Error): Result<T> =
+            Result(false, null, null, listOf(error))
+
+        fun <T> failure(exception: LocationDomainException): Result<T> {
+            val error = Error(exception.code, exception.message ?: "Domain exception occurred")
+            return Result(false, null, exception.message, listOf(error))
+        }
     }
-}
-
-/**
- * Extension function to map the data in a successful result
- */
-inline fun <T, R> Result<T>.map(transform: (T) -> R): Result<R> = when (this) {
-    is Result.Success -> Result.success(transform(data))
-    is Result.Failure -> this
-}
-
-/**
- * Extension function to flat map results
- */
-inline fun <T, R> Result<T>.flatMap(transform: (T) -> Result<R>): Result<R> = when (this) {
-    is Result.Success -> transform(data)
-    is Result.Failure -> this
-}
-
-/**
- * Extension function to perform action on success
- */
-inline fun <T> Result<T>.onSuccess(action: (T) -> Unit): Result<T> {
-    if (this is Result.Success) {
-        action(data)
-    }
-    return this
-}
-
-/**
- * Extension function to perform action on failure
- */
-inline fun <T> Result<T>.onFailure(action: (String, List<Error>) -> Unit): Result<T> {
-    if (this is Result.Failure) {
-        action(errorMessage, errors)
-    }
-    return this
 }
