@@ -1,11 +1,13 @@
 // shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/domain/valueobjects/Coordinate.kt
 package com.x3squaredcircles.pixmap.shared.domain.valueobjects
 
+import kotlinx.serialization.Serializable
 import kotlin.math.*
 
 /**
  * PERFORMANCE OPTIMIZED: Value object representing geographic coordinates
  */
+@Serializable
 data class Coordinate(
     val latitude: Double,
     val longitude: Double

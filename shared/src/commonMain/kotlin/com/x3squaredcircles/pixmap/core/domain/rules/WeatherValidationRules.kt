@@ -1,4 +1,5 @@
-package com.x3squaredcircles.pixmap.shared.domain.rules
+//shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/core/domain/rules/WeatherValidationRules.kt
+package com.x3squaredcircles.pixmap.core.domain.rules
 
 import com.x3squaredcircles.pixmap.shared.domain.entities.Weather
 import com.x3squaredcircles.pixmap.shared.domain.entities.WeatherForecast
@@ -63,12 +64,15 @@ object WeatherValidationRules {
             errors.add("Invalid UV index for ${forecast.date}")
         }
 
-        if (forecast.moonPhase < 0 || forecast.moonPhase > 1) {
+        val moonPhase = forecast.moonPhase
+        if (moonPhase != null && (moonPhase < 0 || moonPhase > 1)) {
             errors.add("Invalid moon phase for ${forecast.date}")
         }
     }
 
     fun isStale(weather: Weather, maxAge: Duration): Boolean {
-        return Clock.System.now() - weather.lastUpdate > maxAge
+        val now = Clock.System.now()
+        val timeDifference = now - weather.lastUpdate
+        return timeDifference > maxAge
     }
 }

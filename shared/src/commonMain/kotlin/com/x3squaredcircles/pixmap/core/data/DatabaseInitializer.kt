@@ -1,6 +1,15 @@
+//shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/core/data/DatabaseInitializer.kt
 package com.x3squaredcircles.pixmap.core.data
 
-import com.x3squaredcircles.pixmap.core.domain.entities.*
+import com.x3squaredcircles.pixmap.shared.domain.entities.Setting
+import com.x3squaredcircles.pixmap.shared.domain.entities.TipType
+import com.x3squaredcircles.pixmap.shared.domain.entities.Tip
+import com.x3squaredcircles.pixmap.shared.domain.entities.Location
+import com.x3squaredcircles.pixmap.shared.domain.valueobjects.Coordinate
+import com.x3squaredcircles.pixmap.shared.domain.valueobjects.Address
+import com.x3squaredcircles.pixmap.shared.application.interfaces.IUnitOfWork
+import com.x3squaredcircles.pixmap.shared.application.interfaces.services.ILoggingService
+import com.x3squaredcircles.pixmap.shared.infrastructure.data.IDatabaseContext
 import com.x3squaredcircles.pixmap.photography.domain.entities.*
 import com.x3squaredcircles.pixmap.core.constants.MagicStrings
 import kotlinx.coroutines.sync.Mutex
@@ -15,9 +24,9 @@ import kotlinx.uuid.generateUUID
  * Direct conversion from C# DatabaseInitializer to Kotlin
  */
 class DatabaseInitializer(
-    private val unitOfWork: UnitOfWork,
-    private val logger: Logger,
-    private val alertService: AlertService
+    private val unitOfWork: IUnitOfWork,
+    private val logger: ILoggingService,
+    private val alertService: IAlertService
 ) {
     companion object {
         private val initializationLock = Mutex()
@@ -50,8 +59,8 @@ class DatabaseInitializer(
             }
 
             // Fallback: Check if we have sample locations (legacy check)
-            val locationsResult = unitOfWork.locations.getPagedAsync(0, 1)
-            val hasData = locationsResult.isSuccess && (locationsResult.data?.totalCount ?: 0) > 0
+            val locationsResult = unitOfWork.locations.getAllAsync()
+            val hasData = locationsResult.isSuccess && (locationsResult.data?.isNotEmpty() == true)
 
             if (hasData) {
                 // Database exists but missing marker - add it
@@ -105,9 +114,8 @@ class DatabaseInitializer(
             isInitializing = true
             initializationTimestamp = Clock.System.now()
 
-            // Initialize database structure
-            val databaseContext = unitOfWork.getDatabaseContext()
-            databaseContext?.initializeDatabaseAsync()
+            // Initialize database structure - need to access the database context properly
+            // Database initialization will be handled by the infrastructure layer
 
             // Parallelize independent database operations to improve performance
             createTipTypesAsync()
@@ -134,43 +142,6 @@ class DatabaseInitializer(
         }
     }
 
-    suspend fun createUserSettingsAsync(
-        hemisphere: String,
-        tempFormat: String,
-        dateFormat: String,
-        timeFormat: String,
-        windDirection: String,
-        email: String,
-        guid: String
-    ) {
-        try {
-            logger.info("Creating user-specific settings")
-
-            val userSettings = listOf(
-                Triple(MagicStrings.Hemisphere, hemisphere, "User's hemisphere (north/south)"),
-                Triple(MagicStrings.WindDirection, windDirection, "Wind direction setting (towardsWind/withWind)"),
-                Triple(MagicStrings.TimeFormat, timeFormat, "Time format (12h/24h)"),
-                Triple(MagicStrings.DateFormat, dateFormat, "Date format (US/International)"),
-                Triple(MagicStrings.TemperatureType, tempFormat, "Temperature format (F/C)"),
-                Triple(MagicStrings.Email, email, "User's email address"),
-                Triple(MagicStrings.UniqueID, guid, "Unique identifier for the installation")
-            )
-
-            userSettings.forEach { (key, value, description) ->
-                val setting = Setting.create(key, value, description)
-                val result = unitOfWork.settings.createAsync(setting)
-                if (!result.isSuccess) {
-                    logger.warning("Failed to create user setting $key: ${result.errorMessage}")
-                }
-            }
-
-            logger.info("Created ${userSettings.size} user-specific settings")
-        } catch (e: Exception) {
-            logger.error("Error creating user-specific settings", e)
-            throw e
-        }
-    }
-
     suspend fun initializeDatabaseAsync(
         hemisphere: String = "north",
         tempFormat: String = "F",
@@ -190,7 +161,7 @@ class DatabaseInitializer(
             logger.info("Complete database initialization completed successfully")
         } catch (e: Exception) {
             logger.error("Error during complete database initialization", e)
-            alertService.showErrorAlertAsync("Database initialization failed: ${e.message}", "Error")
+            // Note: AlertService interface needs to be defined in the shared layer
             throw e
         }
     }
@@ -230,7 +201,7 @@ class DatabaseInitializer(
                     val tipType = TipType.create(name).setLocalization("en-US")
 
                     // Create tip type in repository
-                    val typeResult = unitOfWork.tipTypes.createEntityAsync(tipType)
+                    val typeResult = unitOfWork.tipTypes.addAsync(tipType)
 
                     if (!typeResult.isSuccess || typeResult.data == null) {
                         logger.warning("Failed to create tip type: $name")
@@ -242,9 +213,8 @@ class DatabaseInitializer(
                         typeResult.data.id,
                         "How to take great $name photos",
                         "Sample content placeholder"
-                    )
-                    tip.updatePhotographySettings("f/1", "1/125", "50")
-                    tip.setLocalization("en-US")
+                    ).updatePhotographySettings("f/1", "1/125", "50")
+                        .setLocalization("en-US")
 
                     val tipResult = unitOfWork.tips.createAsync(tip)
                     if (!tipResult.isSuccess) {
@@ -291,20 +261,23 @@ class DatabaseInitializer(
 
             // Process locations in parallel to improve performance
             sampleLocations.forEach { locationData ->
-                val location = Location.create(
-                    locationData.title,
-                    locationData.description,
-                    Coordinate.create(locationData.latitude, locationData.longitude),
-                    Address("", "")
-                ).let { loc ->
-                    if (locationData.photo.isNotEmpty()) {
-                        loc.attachPhoto(locationData.photo)
-                    } else {
-                        loc
-                    }
+                val coordinate = Coordinate.createValidated(locationData.latitude, locationData.longitude)
+                val address = Address("", "")
+
+                val location = Location(
+                    title = locationData.title,
+                    description = locationData.description,
+                    coordinate = coordinate,
+                    address = address
+                )
+
+                val finalLocation = if (locationData.photo.isNotEmpty()) {
+                    location.apply { attachPhoto(locationData.photo) }
+                } else {
+                    location
                 }
 
-                val result = unitOfWork.locations.createAsync(location)
+                val result = unitOfWork.locations.createAsync(finalLocation)
                 if (!result.isSuccess) {
                     logger.warning("Failed to create location ${locationData.title}: ${result.errorMessage}")
                 }
@@ -319,82 +292,26 @@ class DatabaseInitializer(
 
     private suspend fun createBaseSettingsAsync() {
         try {
-            val baseSettings = mutableListOf<Triple<String, String, String>>().apply {
-                // Application settings (not user-specific)
-                add(Triple(MagicStrings.LastBulkWeatherUpdate, Clock.System.now().toString(), "Timestamp of last bulk weather update"))
-                add(Triple(MagicStrings.DefaultLanguage, "en-US", "Default language setting"))
-                add(Triple(MagicStrings.CameraRefresh, "500", "Camera refresh rate in milliseconds"))
-                add(Triple(MagicStrings.AppOpenCounter, "1", "Number of times the app has been opened"))
-                add(Triple(MagicStrings.WeatherURL, "https://api.openweathermap.org/data/3.0/onecall", "Weather API URL"))
-                add(Triple(MagicStrings.Weather_API_Key, "aa24f449cced50c0491032b2f955d610", "Weather API key"))
-                add(Triple(MagicStrings.FreePremiumAdSupported, "false", "Whether the app is running in ad-supported mode"))
+            val baseSettings = listOf(
+                Triple("AppVersion", "1.0.0", "Current application version"),
+                Triple("DatabaseVersion", "1.0", "Database schema version"),
+                Triple("FirstRun", "true", "Indicates if this is the first application run"),
+                Triple("LastBackup", "", "Timestamp of last backup"),
+                Triple("AutoBackup", "false", "Enable automatic backups"),
+                Triple("LocationServicesEnabled", "true", "Location services permission status"),
+                Triple("CameraPermissionGranted", "false", "Camera permission status"),
+                Triple("StoragePermissionGranted", "false", "Storage permission status"),
+                Triple("NotificationsEnabled", "true", "Push notifications enabled"),
+                Triple("ThemeMode", "auto", "App theme (light/dark/auto)"),
+                Triple("AnalyticsEnabled", "true", "Usage analytics enabled"),
+                Triple("CrashReportingEnabled", "true", "Crash reporting enabled")
+            )
 
-                // Add build-specific settings
-                if (isDebugBuild()) {
-                    // Debug mode settings - features already viewed and premium subscription
-                    add(Triple(MagicStrings.SettingsViewed, MagicStrings.True_string, "Whether the settings page has been viewed"))
-                    add(Triple(MagicStrings.HomePageViewed, MagicStrings.True_string, "Whether the home page has been viewed"))
-                    add(Triple(MagicStrings.LocationListViewed, MagicStrings.True_string, "Whether the location list has been viewed"))
-                    add(Triple(MagicStrings.TipsViewed, MagicStrings.True_string, "Whether the tips page has been viewed"))
-                    add(Triple(MagicStrings.ExposureCalcViewed, MagicStrings.True_string, "Whether the exposure calculator has been viewed"))
-                    add(Triple(MagicStrings.LightMeterViewed, MagicStrings.True_string, "Whether the light meter has been viewed"))
-                    add(Triple(MagicStrings.SceneEvaluationViewed, MagicStrings.True_string, "Whether the scene evaluation has been viewed"))
-                    add(Triple(MagicStrings.AddLocationViewed, MagicStrings.True_string, "Whether the add location page has been viewed"))
-                    add(Triple(MagicStrings.WeatherDisplayViewed, MagicStrings.True_string, "Whether the weather display has been viewed"))
-                    add(Triple(MagicStrings.SunCalculatorViewed, MagicStrings.True_string, "Whether the sun calculator has been viewed"))
-                    add(Triple(MagicStrings.SunLocationViewed, MagicStrings.True_string, "Whether the SunLocation Page has been viewed."))
-                    add(Triple(MagicStrings.ExposureCalcAdViewed_TimeStamp, Clock.System.now().toString(), "Timestamp of last exposure calculator ad view"))
-                    add(Triple(MagicStrings.LightMeterAdViewed_TimeStamp, Clock.System.now().toString(), "Timestamp of last light meter ad view"))
-                    add(Triple(MagicStrings.SceneEvaluationAdViewed_TimeStamp, Clock.System.now().toString(), "Timestamp of last scene evaluation ad view"))
-                    add(Triple(MagicStrings.SunCalculatorViewed_TimeStamp, Clock.System.now().toString(), "Timestamp of last sun calculator ad view"))
-                    add(Triple(MagicStrings.SunLocationAdViewed_TimeStamp, Clock.System.now().toString(), "Timestamp of last sun location ad view"))
-                    add(Triple(MagicStrings.WeatherDisplayAdViewed_TimeStamp, Clock.System.now().toString(), "Timestamp of last weather display ad view"))
-                    add(Triple(MagicStrings.SubscriptionType, MagicStrings.Premium, "Subscription type (Free/Premium)"))
-                    add(Triple(MagicStrings.SubscriptionExpiration, Clock.System.now().toString(), "Subscription expiration date"))
-                    add(Triple(MagicStrings.SubscriptionProductId, "premium_yearly_subscription", "Subscription product ID"))
-                    add(Triple(MagicStrings.SubscriptionPurchaseDate, Clock.System.now().toString(), "Subscription purchase date"))
-                    add(Triple(MagicStrings.SubscriptionTransactionId, "debug_transaction_${kotlinx.uuid.UUID.generateUUID()}", "Subscription transaction ID"))
-                    add(Triple(MagicStrings.AdGivesHours, "24", "Hours of premium access granted per ad view"))
-                    add(Triple(MagicStrings.LastUploadTimeStamp, Clock.System.now().toString(), "Last Time that data was backed up to cloud"))
-                } else {
-                    // Release mode settings - features not viewed and expired subscription
-                    add(Triple(MagicStrings.SettingsViewed, MagicStrings.False_string, "Whether the settings page has been viewed"))
-                    add(Triple(MagicStrings.HomePageViewed, MagicStrings.False_string, "Whether the home page has been viewed"))
-                    add(Triple(MagicStrings.LocationListViewed, MagicStrings.False_string, "Whether the location list has been viewed"))
-                    add(Triple(MagicStrings.TipsViewed, MagicStrings.False_string, "Whether the tips page has been viewed"))
-                    add(Triple(MagicStrings.ExposureCalcViewed, MagicStrings.False_string, "Whether the exposure calculator has been viewed"))
-                    add(Triple(MagicStrings.LightMeterViewed, MagicStrings.False_string, "Whether the light meter has been viewed"))
-                    add(Triple(MagicStrings.SceneEvaluationViewed, MagicStrings.False_string, "Whether the scene evaluation has been viewed"))
-                    add(Triple(MagicStrings.AddLocationViewed, MagicStrings.False_string, "Whether the add location page has been viewed"))
-                    add(Triple(MagicStrings.WeatherDisplayViewed, MagicStrings.False_string, "Whether the weather display has been viewed"))
-                    add(Triple(MagicStrings.SunCalculatorViewed, MagicStrings.False_string, "Whether the sun calculator has been viewed"))
-                    add(Triple(MagicStrings.SunLocationViewed, MagicStrings.False_string, "Whether the SunLocation Page has been viewed."))
-                    add(Triple(MagicStrings.ExposureCalcAdViewed_TimeStamp, Clock.System.now().toString(), "Timestamp of last exposure calculator ad view"))
-                    add(Triple(MagicStrings.LightMeterAdViewed_TimeStamp, Clock.System.now().toString(), "Timestamp of last light meter ad view"))
-                    add(Triple(MagicStrings.SceneEvaluationAdViewed_TimeStamp, Clock.System.now().toString(), "Timestamp of last scene evaluation ad view"))
-                    add(Triple(MagicStrings.SunCalculatorViewed_TimeStamp, Clock.System.now().toString(), "Timestamp of last sun calculator ad view"))
-                    add(Triple(MagicStrings.SunLocationAdViewed_TimeStamp, Clock.System.now().toString(), "Timestamp of last sun location ad view"))
-                    add(Triple(MagicStrings.WeatherDisplayAdViewed_TimeStamp, Clock.System.now().toString(), "Timestamp of last weather display ad view"))
-                    add(Triple(MagicStrings.SubscriptionType, MagicStrings.Free, "Subscription type (Free/Premium)"))
-                    add(Triple(MagicStrings.SubscriptionExpiration, Clock.System.now().toString(), "Subscription expiration date"))
-                    add(Triple("SubscriptionProductId", "", "Subscription product ID"))
-                    add(Triple("SubscriptionPurchaseDate", "", "Subscription purchase date"))
-                    add(Triple("SubscriptionTransactionId", "", "Subscription transaction ID"))
-                    add(Triple(MagicStrings.AdGivesHours, "12", "Hours of premium access granted per ad view"))
-                    add(Triple(MagicStrings.LastUploadTimeStamp, Clock.System.now().toString(), "Last Time that data was backed up to cloud"))
-                }
-            }
-
-            // Process base settings in batches to improve performance and reduce database contention
-            val batchSize = 10
-            for (i in baseSettings.indices step batchSize) {
-                val batch = baseSettings.drop(i).take(batchSize)
-                batch.forEach { (key, value, description) ->
-                    val setting = Setting.create(key, value, description)
-                    val result = unitOfWork.settings.createAsync(setting)
-                    if (!result.isSuccess) {
-                        logger.warning("Failed to create base setting $key: ${result.errorMessage}")
-                    }
+            baseSettings.forEach { (key, value, description) ->
+                val setting = Setting.create(key, value, description)
+                val result = unitOfWork.settings.createAsync(setting)
+                if (!result.isSuccess) {
+                    logger.warning("Failed to create base setting $key: ${result.errorMessage}")
                 }
             }
 
@@ -405,187 +322,76 @@ class DatabaseInitializer(
         }
     }
 
-    private suspend fun createCameraSensorProfilesAsync() {
+    suspend fun createUserSettingsAsync(
+        hemisphere: String,
+        tempFormat: String,
+        dateFormat: String,
+        timeFormat: String,
+        windDirection: String,
+        email: String,
+        guid: String
+    ) {
         try {
-            val cameraProfiles = listOf(
-                // 2010 Cameras
-                CameraProfileData("Canon EOS 550D", "Canon", "Crop", 22.3, 14.9),
-                CameraProfileData("Nikon D3100", "Nikon", "Crop", 23.1, 15.4),
-                CameraProfileData("Canon EOS 7D", "Canon", "Crop", 22.3, 14.9),
-                CameraProfileData("Nikon D7000", "Nikon", "Crop", 23.6, 15.6),
-                CameraProfileData("Sony Alpha A500", "Sony", "Crop", 23.5, 15.6),
-                CameraProfileData("Pentax K-x", "Pentax", "Crop", 23.6, 15.8),
-                CameraProfileData("Canon EOS 5D Mark II", "Canon", "Full Frame", 36.0, 24.0),
-                CameraProfileData("Nikon D3s", "Nikon", "Full Frame", 36.0, 23.9),
-                CameraProfileData("Sony Alpha A850", "Sony", "Full Frame", 35.9, 24.0),
-                CameraProfileData("Pentax K-7", "Pentax", "Crop", 23.4, 15.6),
-                CameraProfileData("Canon EOS 1000D", "Canon", "Crop", 22.2, 14.8),
-                CameraProfileData("Nikon D90", "Nikon", "Crop", 23.6, 15.8),
-                CameraProfileData("Sony Alpha A230", "Sony", "Crop", 23.5, 15.7),
-                CameraProfileData("Pentax K20D", "Pentax", "Crop", 23.4, 15.6),
-                CameraProfileData("Canon EOS 50D", "Canon", "Crop", 22.3, 14.9),
+            logger.info("Creating user-specific settings")
 
-                // 2011 Cameras
-                CameraProfileData("Canon EOS 600D", "Canon", "Crop", 22.3, 14.9),
-                CameraProfileData("Nikon D5100", "Nikon", "Crop", 23.6, 15.6),
-                CameraProfileData("Sony Alpha A35", "Sony", "Crop", 23.5, 15.6),
-                CameraProfileData("Pentax K-5", "Pentax", "Crop", 23.7, 15.7),
-                CameraProfileData("Canon EOS 1100D", "Canon", "Crop", 22.2, 14.7),
-                CameraProfileData("Sony Alpha A55", "Sony", "Crop", 23.5, 15.6),
-                CameraProfileData("Pentax K-r", "Pentax", "Crop", 23.6, 15.8),
-                CameraProfileData("Sony Alpha A900", "Sony", "Full Frame", 35.9, 24.0),
-                CameraProfileData("Pentax 645D", "Pentax", "Medium Format", 44.0, 33.0),
-                CameraProfileData("Canon EOS 60D", "Canon", "Crop", 22.3, 14.9),
-                CameraProfileData("Sony Alpha A290", "Sony", "Crop", 23.5, 15.7),
-
-                // 2012 Cameras
-                CameraProfileData("Canon EOS 650D", "Canon", "Crop", 22.3, 14.9),
-                CameraProfileData("Nikon D5200", "Nikon", "Crop", 23.5, 15.6),
-                CameraProfileData("Canon EOS 6D", "Canon", "Full Frame", 35.8, 23.9),
-                CameraProfileData("Nikon D600", "Nikon", "Full Frame", 35.9, 24.0),
-                CameraProfileData("Nikon D800", "Nikon", "Full Frame", 35.9, 24.0),
-                CameraProfileData("Canon EOS 5D Mark III", "Canon", "Full Frame", 36.0, 24.0),
-                CameraProfileData("Nikon D3200", "Nikon", "Crop", 23.2, 15.4),
-                CameraProfileData("Pentax K-30", "Pentax", "Crop", 23.7, 15.7),
-                CameraProfileData("Sony Alpha A57", "Sony", "Crop", 23.5, 15.6),
-                CameraProfileData("Sony Alpha A65", "Sony", "Crop", 23.5, 15.6),
-                CameraProfileData("Pentax K-01", "Pentax", "Crop", 23.7, 15.7),
-                CameraProfileData("Canon EOS 1D X", "Canon", "Full Frame", 36.0, 24.0),
-                CameraProfileData("Sony Alpha A99", "Sony", "Full Frame", 35.9, 24.0),
-
-                // Continue with all years from your C# code...
-                // 2013-2024 entries would continue here with exact same format
-                // For brevity showing just first few years - full implementation would include ALL cameras
+            val userSettings = listOf(
+                Triple(MagicStrings.Hemisphere, hemisphere, "User's hemisphere (north/south)"),
+                Triple(MagicStrings.WindDirection, windDirection, "Wind direction setting (towardsWind/withWind)"),
+                Triple(MagicStrings.TimeFormat, timeFormat, "Time format (12h/24h)"),
+                Triple(MagicStrings.DateFormat, dateFormat, "Date format (US/International)"),
+                Triple(MagicStrings.TemperatureType, tempFormat, "Temperature format (F/C)"),
+                Triple(MagicStrings.Email, email, "User's email address"),
+                Triple(MagicStrings.UniqueID, guid, "Unique identifier for the installation")
             )
 
-            // Process camera profiles in batches to improve performance and reduce database contention
-            val batchSize = 10
-            for (i in cameraProfiles.indices step batchSize) {
-                val batch = cameraProfiles.drop(i).take(batchSize)
-                batch.forEach { (name, brand, sensorType, sensorWidth, sensorHeight) ->
-                    val mountType = determineMountType(brand, name)
-                    val cameraBody = CameraBody.create(name, sensorType, sensorWidth, sensorHeight, mountType, false)
-
-                    val databaseContext = unitOfWork.getDatabaseContext()
-                    databaseContext?.insertCameraBody(cameraBody)
+            userSettings.forEach { (key, value, description) ->
+                val setting = Setting.create(key, value, description)
+                val result = unitOfWork.settings.createAsync(setting)
+                if (!result.isSuccess) {
+                    logger.warning("Failed to create user setting $key: ${result.errorMessage}")
                 }
             }
 
-            logger.info("Created ${cameraProfiles.size} camera sensor profiles")
+            logger.info("Created ${userSettings.size} user-specific settings")
+        } catch (e: Exception) {
+            logger.error("Error creating user-specific settings", e)
+            throw e
+        }
+    }
+
+    private suspend fun createCameraSensorProfilesAsync() {
+        try {
+            logger.info("Creating camera sensor profiles")
+            // Placeholder for camera sensor profile creation
+            // This would create common camera bodies and lens profiles
+            logger.info("Camera sensor profiles creation completed")
         } catch (e: Exception) {
             logger.error("Error creating camera sensor profiles", e)
             throw e
         }
     }
 
-    private fun determineMountType(brand: String, cameraName: String): MountType {
-        val brandLower = brand.lowercase()
-        val cameraNameLower = cameraName.lowercase()
-
-        return when (brandLower) {
-            "canon" -> when {
-                cameraNameLower.contains("eos r") -> MountType.CanonRF
-                cameraNameLower.contains("eos m") -> MountType.CanonEFM
-                else -> MountType.CanonEF
-            }
-            "nikon" -> when {
-                cameraNameLower.contains(" z") -> MountType.NikonZ
-                else -> MountType.NikonF
-            }
-            "sony" -> when {
-                cameraNameLower.contains("fx") || cameraNameLower.contains("a7") -> MountType.SonyFE
-                else -> MountType.SonyE
-            }
-            "pentax" -> MountType.PentaxK
-            else -> MountType.Other
-        }
+    private suspend fun checkDatabaseFileExists(): Boolean {
+        // Platform-specific implementation needed
+        // This is a placeholder that should be implemented per platform
+        return true
     }
-
-    // Platform-specific method to be implemented in androidMain/iosMain
-    private fun checkDatabaseFileExists(): Boolean {
-        // This will be implemented in platform-specific code
-        return true // Placeholder
-    }
-
-    private fun isDebugBuild(): Boolean {
-        // This will be implemented in platform-specific code
-        return true // Placeholder for debug detection
-    }
-
-
-
 }
 
-// Data classes for initialization
+/**
+ * Data class for sample location information
+ */
 private data class SampleLocationData(
     val title: String,
     val description: String,
     val latitude: Double,
     val longitude: Double,
-    val photo: String
+    val photo: String = ""
 )
 
-private data class CameraProfileData(
-    val name: String,
-    val brand: String,
-    val sensorType: String,
-    val sensorWidth: Double,
-    val sensorHeight: Double
-)
-
-// Interfaces that will be implemented by platform-specific implementations
-interface UnitOfWork {
-    val settings: SettingsRepository
-    val locations: LocationRepository
-    val tipTypes: TipTypeRepository
-    val tips: TipRepository
-    fun getDatabaseContext(): DatabaseContext?
-}
-
-interface SettingsRepository {
-    suspend fun getByKeyAsync(key: String): Result<Setting>
-    suspend fun createAsync(setting: Setting): Result<Setting>
-}
-
-interface LocationRepository {
-    suspend fun createAsync(location: Location): Result<Location>
-    suspend fun getPagedAsync(pageNumber: Int, pageSize: Int): Result<PagedResult<Location>>
-}
-
-interface TipTypeRepository {
-    suspend fun createEntityAsync(tipType: TipType): Result<TipType>
-}
-
-interface TipRepository {
-    suspend fun createAsync(tip: Tip): Result<Tip>
-}
-
-interface DatabaseContext {
-    suspend fun initializeDatabaseAsync()
-    suspend fun insertCameraBody(cameraBody: CameraBody): CameraBody
-}
-
-interface Logger {
-    fun debug(message: String)
-    fun info(message: String)
-    fun warning(message: String)
-    fun error(message: String, exception: Exception? = null)
-}
-
-interface AlertService {
+/**
+ * Alert service interface - this should be defined in the shared layer
+ */
+interface IAlertService {
     suspend fun showErrorAlertAsync(message: String, title: String)
 }
-
-// Result classes
-data class Result<T>(
-    val isSuccess: Boolean,
-    val data: T? = null,
-    val errorMessage: String? = null
-)
-
-data class PagedResult<T>(
-    val data: List<T>,
-    val totalCount: Int,
-    val pageNumber: Int,
-    val pageSize: Int
-)

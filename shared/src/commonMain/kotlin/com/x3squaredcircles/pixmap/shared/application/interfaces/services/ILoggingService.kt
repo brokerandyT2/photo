@@ -1,4 +1,4 @@
-// shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/interfaces/services/ILoggingService.kt
+//shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/interfaces/services/ILoggingService.kt
 package com.x3squaredcircles.pixmap.shared.application.interfaces.services
 
 import kotlinx.datetime.Instant
@@ -42,6 +42,47 @@ interface ILoggingService {
      * Logs a critical error with exception details
      */
     fun critical(message: String, exception: Throwable, vararg args: Any?)
+
+    // Alternative method names for backward compatibility
+    /**
+     * Logs a debug message (alternative naming)
+     */
+    fun logDebug(message: String, tag: String? = null)
+
+    /**
+     * Logs an informational message (alternative naming)
+     */
+    fun logInfo(message: String, tag: String? = null)
+
+    /**
+     * Logs a warning message (alternative naming)
+     */
+    fun logWarning(message: String, tag: String? = null)
+
+    /**
+     * Logs an error message (alternative naming)
+     */
+    fun logError(message: String, exception: Throwable? = null, tag: String? = null)
+
+    /**
+     * Logs a verbose message
+     */
+    fun logVerbose(message: String, tag: String? = null)
+
+    /**
+     * Logs the start of an operation
+     */
+    fun logOperationStart(operationName: String, parameters: Map<String, Any>? = null)
+
+    /**
+     * Logs the completion of an operation
+     */
+    fun logOperationComplete(operationName: String, durationMs: Long?, result: String? = null)
+
+    /**
+     * Logs the failure of an operation
+     */
+    fun logOperationFailure(operationName: String, exception: Throwable, durationMs: Long? = null)
 
     /**
      * Logs performance metrics
@@ -109,11 +150,13 @@ interface ILoggingService {
  * Log severity levels
  */
 enum class LogLevel(val priority: Int) {
-    DEBUG(0),
-    INFO(1),
-    WARNING(2),
-    ERROR(3),
-    CRITICAL(4);
+    VERBOSE(0),
+    DEBUG(1),
+    INFO(2),
+    WARNING(3),
+    ERROR(4),
+    CRITICAL(5),
+    NONE(6);
 
     companion object {
         fun fromString(level: String): LogLevel {
@@ -213,44 +256,4 @@ fun ILoggingService.warningLocation(message: String, latitude: Double? = null, l
     latitude?.let { properties["latitude"] = it }
     longitude?.let { properties["longitude"] = it }
     structured(LogLevel.WARNING, message, LogCategories.LOCATION, properties)
-}
-
-fun ILoggingService.errorBusiness(message: String, operation: String, exception: Throwable? = null) {
-    structured(
-        LogLevel.ERROR,
-        message,
-        LogCategories.BUSINESS_LOGIC,
-        mapOf("operation" to operation),
-        exception
-    )
-}
-
-/**
- * Inline extension for timing operations
- */
-inline fun <T> ILoggingService.timed(operationName: String, operation: () -> T): T {
-    val timedOp = beginTimedOperation(operationName)
-    return try {
-        val result = operation()
-        timedOp.complete(true)
-        result
-    } catch (e: Exception) {
-        timedOp.completeWithError(e)
-        throw e
-    }
-}
-
-/**
- * Suspending extension for timing coroutine operations
- */
-suspend inline fun <T> ILoggingService.timedSuspend(operationName: String, crossinline operation: suspend () -> T): T {
-    val timedOp = beginTimedOperation(operationName)
-    return try {
-        val result = operation()
-        timedOp.complete(true)
-        result
-    } catch (e: Exception) {
-        timedOp.completeWithError(e)
-        throw e
-    }
 }

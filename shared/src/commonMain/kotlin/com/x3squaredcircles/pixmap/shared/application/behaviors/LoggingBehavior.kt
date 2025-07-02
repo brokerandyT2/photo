@@ -1,10 +1,11 @@
-// shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/behaviors/LoggingBehavior.kt
+//shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/behaviors/LoggingBehavior.kt
 package com.x3squaredcircles.pixmap.shared.application.behaviors
 
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IMediator
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IPipelineBehavior
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IRequest
 import com.x3squaredcircles.pixmap.shared.application.interfaces.services.ILoggingService
+import com.x3squaredcircles.pixmap.shared.application.interfaces.services.LogLevel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -40,7 +41,7 @@ class LoggingBehavior<TRequest : IRequest<TResponse>, TResponse>(
         val startTime = Clock.System.now()
 
         // Log request start with minimal overhead
-        logger.logDebug("Starting request: $requestName")
+        logger.debug("Starting request: $requestName")
 
         return try {
             // Execute the request
@@ -50,19 +51,19 @@ class LoggingBehavior<TRequest : IRequest<TResponse>, TResponse>(
 
             // Log completion
             if (duration > SLOW_REQUEST_THRESHOLD_MS) {
-                logger.logWarning("Slow request completed: $requestName in ${duration}ms")
+                logger.warning("Slow request completed: $requestName in ${duration}ms")
 
                 // Async serialization for slow requests (fire-and-forget)
                 coroutineScope.launch {
                     try {
                         val requestDetails = serializeRequestAsync(request)
-                        logger.logInfo("Slow request details: $requestName - $requestDetails")
+                        logger.info("Slow request details: $requestName - $requestDetails")
                     } catch (e: Exception) {
-                        logger.logDebug("Failed to serialize slow request details: ${e.message}")
+                        logger.debug("Failed to serialize slow request details: ${e.message}")
                     }
                 }
             } else {
-                logger.logDebug("Request completed: $requestName in ${duration}ms")
+                logger.debug("Request completed: $requestName in ${duration}ms")
             }
 
             response
@@ -70,7 +71,7 @@ class LoggingBehavior<TRequest : IRequest<TResponse>, TResponse>(
             val endTime = Clock.System.now()
             val duration = (endTime - startTime).inWholeMilliseconds
 
-            logger.logError(
+            logger.error(
                 "Request failed: $requestName in ${duration}ms",
                 exception
             )
@@ -79,12 +80,12 @@ class LoggingBehavior<TRequest : IRequest<TResponse>, TResponse>(
             coroutineScope.launch {
                 try {
                     val requestDetails = serializeRequestAsync(request)
-                    logger.logError(
+                    logger.error(
                         "Failed request details: $requestName - $requestDetails",
                         exception
                     )
                 } catch (serializationException: Exception) {
-                    logger.logDebug("Failed to serialize failed request details: ${serializationException.message}")
+                    logger.debug("Failed to serialize failed request details: ${serializationException.message}")
                 }
             }
 
@@ -120,19 +121,20 @@ suspend inline fun <T> ILoggingService.trackOperation(
     operationName: String,
     operation: suspend () -> T
 ): T {
-    logOperationStart(operationName)
+    performance("$operationName started", 0)
     val startTime = Clock.System.now()
 
     return try {
         val result = operation()
         val endTime = Clock.System.now()
         val duration = (endTime - startTime).inWholeMilliseconds
-        logOperationComplete(operationName, duration, "Success")
+        performance("$operationName completed", duration, true)
         result
     } catch (exception: Exception) {
         val endTime = Clock.System.now()
         val duration = (endTime - startTime).inWholeMilliseconds
-        logOperationFailure(operationName, exception, duration)
+        performance("$operationName failed", duration, false)
+        error("Operation failed: $operationName", exception)
         throw exception
     }
 }
@@ -143,7 +145,7 @@ suspend inline fun <T> ILoggingService.trackOperation(
 fun ILoggingService.logWithStructuredData(
     message: String,
     data: Map<String, Any> = emptyMap(),
-    level: com.x3squaredcircles.pixmap.shared.application.interfaces.services.LogLevel = com.x3squaredcircles.pixmap.shared.application.interfaces.services.LogLevel.INFO
+    level: LogLevel = LogLevel.INFO
 ) {
     val structuredMessage = if (data.isNotEmpty()) {
         val dataString = data.entries.joinToString(", ") { "${it.key}=${it.value}" }
@@ -153,11 +155,10 @@ fun ILoggingService.logWithStructuredData(
     }
 
     when (level) {
-        com.x3squaredcircles.pixmap.shared.application.interfaces.services.LogLevel.VERBOSE -> logVerbose(structuredMessage)
-        com.x3squaredcircles.pixmap.shared.application.interfaces.services.LogLevel.DEBUG -> logDebug(structuredMessage)
-        com.x3squaredcircles.pixmap.shared.application.interfaces.services.LogLevel.INFO -> logInfo(structuredMessage)
-        com.x3squaredcircles.pixmap.shared.application.interfaces.services.LogLevel.WARNING -> logWarning(structuredMessage)
-        com.x3squaredcircles.pixmap.shared.application.interfaces.services.LogLevel.ERROR -> logError(structuredMessage)
-        com.x3squaredcircles.pixmap.shared.application.interfaces.services.LogLevel.NONE -> { /* Do nothing */ }
+        LogLevel.DEBUG -> debug(structuredMessage)
+        LogLevel.INFO -> info(structuredMessage)
+        LogLevel.WARNING -> warning(structuredMessage)
+        LogLevel.ERROR -> error(structuredMessage)
+        LogLevel.CRITICAL -> critical(structuredMessage)
     }
 }

@@ -1,6 +1,7 @@
+//shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/core/domain/entities/PhotographyEntities.kt
 package com.x3squaredcircles.pixmap.photography.domain.entities
 
-import com.x3squaredcircles.pixmap.core.domain.entities.Entity
+import com.x3squaredcircles.pixmap.shared.domain.common.Entity
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
 import kotlinx.serialization.Serializable
@@ -39,7 +40,6 @@ enum class LensType {
 
 @Serializable
 data class CameraBody(
-    override val id: Int = 0,
     val name: String,
     val sensorType: String, // "Full Frame", "Crop", "Micro Four Thirds", "Medium Format"
     val sensorWidth: Double,
@@ -68,9 +68,9 @@ data class CameraBody(
         ): CameraBody {
             val cropFactor = when (sensorType.lowercase()) {
                 "full frame" -> 1.0
-                "crop", "aps-c" -> 1.5 // Approximate
+                "crop" -> 1.6 // Canon APS-C
                 "micro four thirds" -> 2.0
-                "medium format" -> 0.79 // Approximate
+                "medium format" -> 0.79
                 else -> 1.0
             }
 
@@ -86,88 +86,97 @@ data class CameraBody(
         }
     }
 
-    fun getDiagonalMm(): Double {
-        return sqrt(sensorWidth * sensorWidth + sensorHeight * sensorHeight)
+    fun calculateFOV(focalLength: Double): Double {
+        val diagonalMM = sqrt(sensorWidth * sensorWidth + sensorHeight * sensorHeight)
+        return 2 * atan(diagonalMM / (2 * focalLength)) * 180 / PI
     }
 
-    fun getAspectRatio(): Double {
-        return sensorWidth / sensorHeight
+    fun getEffectiveFocalLength(focalLength: Double): Double {
+        return focalLength * cropFactor
+    }
+
+    fun updateManufacturerInfo(manufacturer: String, model: String): CameraBody {
+        return copy(manufacturer = manufacturer, model = model)
     }
 }
 
 @Serializable
 data class Lens(
-    override val id: Int = 0,
     val name: String,
-    val minFocalLength: Double,
-    val maxFocalLength: Double,
-    val maxAperture: Double,
-    val minAperture: Double = 22.0,
+    val manufacturer: String,
     val mountType: MountType,
+    val lensType: LensType,
+    val minMM: Double,
+    val maxMM: Double,
+    val maxAperture: String,
     val isUserCreated: Boolean = false,
-    val manufacturer: String = "",
-    val lensType: LensType = LensType.PRIME
+    val notes: String = ""
 ) : Entity() {
 
     init {
         require(name.isNotBlank()) { "Lens name cannot be blank" }
-        require(minFocalLength > 0) { "Min focal length must be positive" }
-        require(maxFocalLength >= minFocalLength) { "Max focal length must be >= min focal length" }
-        require(maxAperture > 0) { "Max aperture must be positive" }
+        require(manufacturer.isNotBlank()) { "Manufacturer cannot be blank" }
+        require(minMM > 0) { "Minimum focal length must be positive" }
+        require(maxMM >= minMM) { "Maximum focal length must be >= minimum focal length" }
+        require(maxAperture.isNotBlank()) { "Max aperture cannot be blank" }
     }
 
     companion object {
-        fun createPrime(
+        fun createPrimeLens(
             name: String,
-            focalLength: Double,
-            maxAperture: Double,
+            manufacturer: String,
             mountType: MountType,
+            focalLength: Double,
+            maxAperture: String,
             isUserCreated: Boolean = false
         ): Lens {
             return Lens(
                 name = name,
-                minFocalLength = focalLength,
-                maxFocalLength = focalLength,
-                maxAperture = maxAperture,
+                manufacturer = manufacturer,
                 mountType = mountType,
-                isUserCreated = isUserCreated,
-                lensType = LensType.PRIME
+                lensType = LensType.PRIME,
+                minMM = focalLength,
+                maxMM = focalLength,
+                maxAperture = maxAperture,
+                isUserCreated = isUserCreated
             )
         }
 
-        fun createZoom(
+        fun createZoomLens(
             name: String,
-            minFocalLength: Double,
-            maxFocalLength: Double,
-            maxAperture: Double,
+            manufacturer: String,
             mountType: MountType,
+            minMM: Double,
+            maxMM: Double,
+            maxAperture: String,
             isUserCreated: Boolean = false
         ): Lens {
             return Lens(
                 name = name,
-                minFocalLength = minFocalLength,
-                maxFocalLength = maxFocalLength,
-                maxAperture = maxAperture,
+                manufacturer = manufacturer,
                 mountType = mountType,
-                isUserCreated = isUserCreated,
-                lensType = LensType.ZOOM
+                lensType = LensType.ZOOM,
+                minMM = minMM,
+                maxMM = maxMM,
+                maxAperture = maxAperture,
+                isUserCreated = isUserCreated
             )
         }
     }
 
-    fun isPrime(): Boolean = lensType == LensType.PRIME
-    fun isZoom(): Boolean = lensType == LensType.ZOOM
+    fun isPrimeLens(): Boolean = minMM == maxMM
 
-    fun getFieldOfView(cameraBody: CameraBody, focalLength: Double = minFocalLength): Double {
-        val effectiveFocalLength = focalLength * cameraBody.cropFactor
-        val sensorDiagonal = cameraBody.getDiagonalMm()
-        return 2 * atan(sensorDiagonal / (2 * effectiveFocalLength)) * 180 / PI
+    fun isZoomLens(): Boolean = minMM != maxMM
+
+    fun getZoomRatio(): Double = if (isZoomLens()) maxMM / minMM else 1.0
+
+    fun updateNotes(notes: String): Lens {
+        return copy(notes = notes)
     }
 }
 
 @Serializable
 data class LensCameraCompatibility(
-    override val id: Int = 0,
     val lensId: Int,
     val cameraBodyId: Int,
     val isNativeMount: Boolean,
@@ -209,11 +218,19 @@ data class LensCameraCompatibility(
             )
         }
     }
+
+    fun getCompatibilityDescription(): String {
+        return when {
+            isNativeMount -> "Native mount compatibility"
+            requiresAdapter && adapterName != null -> "Compatible with $adapterName adapter"
+            requiresAdapter -> "Requires adapter"
+            else -> "Unknown compatibility"
+        }
+    }
 }
 
 @Serializable
 data class UserCameraBody(
-    override val id: Int = 0,
     val userId: String,
     val cameraBodyId: Int,
     val isFavorite: Boolean = false,
@@ -255,7 +272,6 @@ data class UserCameraBody(
 
 @Serializable
 data class PhoneCameraProfile(
-    override val id: Int = 0,
     val phoneModel: String,
     val mainLensFocalLength: Double,
     val mainLensFOV: Double,
@@ -305,8 +321,24 @@ data class PhoneCameraProfile(
 }
 
 @Serializable
+enum class SubscriptionStatus {
+    ACTIVE,
+    EXPIRED,
+    CANCELLED,
+    PENDING,
+    GRACE_PERIOD,
+    ON_HOLD
+}
+
+@Serializable
+enum class SubscriptionType {
+    MONTHLY,
+    YEARLY,
+    LIFETIME
+}
+
+@Serializable
 data class Subscription(
-    override val id: Int = 0,
     val userId: String,
     val productId: String,
     val transactionId: String,
@@ -349,40 +381,29 @@ data class Subscription(
     }
 
     fun isActive(): Boolean {
-        return status == SubscriptionStatus.ACTIVE &&
-                Clock.System.now() < expirationDate
+        return status == SubscriptionStatus.ACTIVE && Clock.System.now() < expirationDate
     }
 
     fun isExpired(): Boolean {
-        return Clock.System.now() >= expirationDate
+        return status == SubscriptionStatus.EXPIRED || Clock.System.now() >= expirationDate
     }
 
     fun cancel(): Subscription {
-        return copy(status = SubscriptionStatus.CANCELED, isAutoRenewing = false)
+        return copy(status = SubscriptionStatus.CANCELLED)
     }
 
-    fun suspend(): Subscription {
-        return copy(status = SubscriptionStatus.SUSPENDED)
+    fun renew(newExpirationDate: Instant): Subscription {
+        return copy(
+            status = SubscriptionStatus.ACTIVE,
+            expirationDate = newExpirationDate
+        )
     }
 
-    fun reactivate(): Subscription {
-        return copy(status = SubscriptionStatus.ACTIVE)
+    fun putOnHold(): Subscription {
+        return copy(status = SubscriptionStatus.ON_HOLD)
     }
-}
 
-@Serializable
-enum class SubscriptionStatus {
-    ACTIVE,
-    CANCELED,
-    EXPIRED,
-    SUSPENDED,
-    PENDING
-}
-
-@Serializable
-enum class SubscriptionType {
-    FREE,
-    BASIC,
-    PREMIUM,
-    PRO
+    fun enterGracePeriod(): Subscription {
+        return copy(status = SubscriptionStatus.GRACE_PERIOD)
+    }
 }

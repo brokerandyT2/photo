@@ -1,118 +1,34 @@
+//shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/core/domain/entities/CoreEntities.kt
 package com.x3squaredcircles.pixmap.core.domain.entities
 
 import com.x3squaredcircles.pixmap.shared.domain.common.DomainEvent
+import com.x3squaredcircles.pixmap.shared.domain.common.Entity
+import com.x3squaredcircles.pixmap.shared.domain.common.AggregateRoot
 import com.x3squaredcircles.pixmap.shared.domain.events.LocationDeletedEvent
 import com.x3squaredcircles.pixmap.shared.domain.events.LocationSavedEvent
+import com.x3squaredcircles.pixmap.shared.domain.events.PhotoAttachedEvent
+import com.x3squaredcircles.pixmap.shared.domain.valueobjects.Address
+import com.x3squaredcircles.pixmap.shared.domain.valueobjects.Coordinate
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
+import kotlinx.serialization.Contextual
 import kotlinx.serialization.Serializable
+import kotlin.math.*
 
 /**
  * Core domain entities converted from C# to Kotlin for KMM
  * Based on Location.Core.Domain entities
+ * Note: This file re-exports shared domain types for backward compatibility
  */
 
-@Serializable
-abstract class Entity {
-    abstract val id: Int
+// Re-export shared domain types for backward compatibility
+typealias CoreEntity = com.x3squaredcircles.pixmap.shared.domain.common.Entity
+typealias CoreAggregateRoot = com.x3squaredcircles.pixmap.shared.domain.common.AggregateRoot
+typealias CoreLocation = com.x3squaredcircles.pixmap.shared.domain.entities.Location
+typealias CoreCoordinate = com.x3squaredcircles.pixmap.shared.domain.valueobjects.Coordinate
+typealias CoreAddress = com.x3squaredcircles.pixmap.shared.domain.valueobjects.Address
 
-    fun isTransient(): Boolean = id == 0
-
-    override fun equals(other: Any?): Boolean {
-        if (this === other) return true
-        if (other == null || this::class != other::class) return false
-
-        other as Entity
-
-        if (isTransient() || other.isTransient()) return false
-
-        return id == other.id
-    }
-
-    override fun hashCode(): Int {
-        return if (isTransient()) super.hashCode() else id.hashCode()
-    }
-}
-
-@Serializable
-abstract class AggregateRoot : Entity() {
-    private val _domainEvents = mutableListOf<DomainEvent>()
-
-    val domainEvents: List<DomainEvent> get() = _domainEvents.toList()
-
-    fun addDomainEvent(event: DomainEvent) {
-        _domainEvents.add(event)
-    }
-
-    fun removeDomainEvent(event: DomainEvent) {
-        _domainEvents.remove(event)
-    }
-
-    fun clearDomainEvents() {
-        _domainEvents.clear()
-    }
-}
-
-
-
-// Value Objects
-@Serializable
-data class Coordinate(
-    val latitude: Double,
-    val longitude: Double
-) {
-    init {
-        require(latitude in -90.0..90.0) { "Latitude must be between -90 and 90" }
-        require(longitude in -180.0..180.0) { "Longitude must be between -180 and 180" }
-        require(!(latitude == 0.0 && longitude == 0.0)) { "Null Island (0,0) is not a valid location" }
-    }
-
-    companion object {
-        private const val EARTH_RADIUS_KM = 6371.0
-
-        fun create(latitude: Double, longitude: Double): Coordinate {
-            return Coordinate(latitude, longitude)
-        }
-    }
-
-    fun distanceTo(other: Coordinate): Double {
-        val lat1Rad = Math.toRadians(latitude)
-        val lon1Rad = Math.toRadians(longitude)
-        val lat2Rad = Math.toRadians(other.latitude)
-        val lon2Rad = Math.toRadians(other.longitude)
-
-        val dLat = lat2Rad - lat1Rad
-        val dLon = lon2Rad - lon1Rad
-
-        val a = kotlin.math.sin(dLat / 2) * kotlin.math.sin(dLat / 2) +
-                kotlin.math.cos(lat1Rad) * kotlin.math.cos(lat2Rad) *
-                kotlin.math.sin(dLon / 2) * kotlin.math.sin(dLon / 2)
-
-        val c = 2 * kotlin.math.atan2(kotlin.math.sqrt(a), kotlin.math.sqrt(1 - a))
-
-        return EARTH_RADIUS_KM * c
-    }
-
-    fun isWithinDistance(other: Coordinate, maxDistanceKm: Double): Boolean {
-        return distanceTo(other) <= maxDistanceKm
-    }
-}
-
-@Serializable
-data class Address(
-    val city: String,
-    val state: String
-) {
-    override fun toString(): String {
-        return when {
-            city.isBlank() && state.isBlank() -> ""
-            state.isBlank() -> city
-            city.isBlank() -> state
-            else -> "$city, $state"
-        }
-    }
-}
-
+// Additional core value objects not in shared domain
 @Serializable
 data class WindInfo(
     val speed: Double,
@@ -132,77 +48,8 @@ data class WindInfo(
     }
 }
 
-// Core Entities
-@Serializable
-data class Location(
-    override val id: Int = 0,
-    val title: String,
-    val description: String,
-    val coordinate: Coordinate,
-    val address: Address,
-    val photoPath: String? = null,
-    val isDeleted: Boolean = false,
-    val timestamp: Instant = Clock.System.now()
-) : AggregateRoot() {
-
-    init {
-        require(title.isNotBlank()) { "Title cannot be empty" }
-        require(description.length <= 500) { "Description cannot exceed 500 characters" }
-    }
-
-    companion object {
-        fun create(
-            title: String,
-            description: String,
-            coordinate: Coordinate,
-            address: Address
-        ): Location {
-            val location = Location(
-                title = title,
-                description = description,
-                coordinate = coordinate,
-                address = address
-            )
-            location.addDomainEvent(LocationSavedEvent(location))
-            return location
-        }
-    }
-
-    fun updateDetails(newTitle: String, newDescription: String): Location {
-        require(newTitle.isNotBlank()) { "Title cannot be empty" }
-        require(newDescription.length <= 500) { "Description cannot exceed 500 characters" }
-
-        val updated = copy(title = newTitle, description = newDescription)
-        updated.addDomainEvent(LocationSavedEvent(updated))
-        return updated
-    }
-
-    fun attachPhoto(photoPath: String): Location {
-        require(photoPath.isNotBlank()) { "Photo path cannot be empty" }
-
-        val updated = copy(photoPath = photoPath)
-        updated.addDomainEvent(PhotoAttachedEvent(id, photoPath))
-        return updated
-    }
-
-    fun removePhoto(): Location {
-        return copy(photoPath = null)
-    }
-
-    fun delete(): Location {
-        val updated = copy(isDeleted = true)
-        updated.addDomainEvent(LocationDeletedEvent(id))
-        return updated
-    }
-
-    fun restore(): Location {
-        return copy(isDeleted = false)
-    }
-}
-
 @Serializable
 data class Setting(
-    override val id: Int = 0,
     val key: String,
     val value: String,
     val description: String = "",
@@ -242,7 +89,6 @@ data class Setting(
 
 @Serializable
 data class TipType(
-    override val id: Int = 0,
     val name: String,
     val i18n: String = "en-US"
 ) : Entity() {
@@ -264,7 +110,6 @@ data class TipType(
 
 @Serializable
 data class Tip(
-    override val id: Int = 0,
     val tipTypeId: Int,
     val title: String,
     val content: String,
@@ -307,6 +152,72 @@ data class Tip(
     }
 }
 
+// Core entities that use shared domain types
+@Serializable
+data class LocationAggregate(
+    val title: String,
+    val description: String,
+    @Contextual val coordinate: CoreCoordinate,
+    @Contextual val address: CoreAddress,
+    val photoPath: String? = null,
+    val isDeleted: Boolean = false,
+    val timestamp: Instant = Clock.System.now()
+) : CoreAggregateRoot() {
+
+    init {
+        require(title.isNotBlank()) { "Title cannot be empty" }
+        require(description.length <= 500) { "Description cannot exceed 500 characters" }
+    }
+
+    companion object {
+        fun create(
+            title: String,
+            description: String,
+            coordinate: CoreCoordinate,
+            address: CoreAddress
+        ): LocationAggregate {
+            val location = LocationAggregate(
+                title = title,
+                description = description,
+                coordinate = coordinate,
+                address = address
+            )
+            location.addDomainEvent(LocationSavedEvent(CoreLocation(title, description, coordinate, address)))
+            return location
+        }
+    }
+
+    fun updateDetails(newTitle: String, newDescription: String): LocationAggregate {
+        require(newTitle.isNotBlank()) { "Title cannot be empty" }
+        require(newDescription.length <= 500) { "Description cannot exceed 500 characters" }
+
+        val updated = copy(title = newTitle, description = newDescription)
+        updated.addDomainEvent(LocationSavedEvent(CoreLocation(newTitle, newDescription, coordinate, address)))
+        return updated
+    }
+
+    fun attachPhoto(photoPath: String): LocationAggregate {
+        require(photoPath.isNotBlank()) { "Photo path cannot be empty" }
+
+        val updated = copy(photoPath = photoPath)
+        updated.addDomainEvent(PhotoAttachedEvent(id, photoPath))
+        return updated
+    }
+
+    fun removePhoto(): LocationAggregate {
+        return copy(photoPath = null)
+    }
+
+    fun delete(): LocationAggregate {
+        val updated = copy(isDeleted = true)
+        updated.addDomainEvent(LocationDeletedEvent(id))
+        return updated
+    }
+
+    fun restore(): LocationAggregate {
+        return copy(isDeleted = false)
+    }
+}
 
 // Domain Exceptions
 sealed class DomainException(message: String, val code: String) : Exception(message)
