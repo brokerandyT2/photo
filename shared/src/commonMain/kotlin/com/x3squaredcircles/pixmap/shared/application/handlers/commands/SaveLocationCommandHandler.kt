@@ -1,7 +1,8 @@
-// shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/handlers/commands/SaveLocationCommandHandler.kt
+//shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/handlers/commands/SaveLocationCommandHandler.kt
 package com.x3squaredcircles.pixmap.shared.application.handlers.commands
 
 import com.x3squaredcircles.pixmap.shared.application.commands.SaveLocationCommand
+import com.x3squaredcircles.pixmap.shared.application.common.models.Result
 import com.x3squaredcircles.pixmap.shared.application.dto.LocationDto
 import com.x3squaredcircles.pixmap.shared.application.events.LocationSaveErrorEvent
 import com.x3squaredcircles.pixmap.shared.application.events.LocationErrorType
@@ -19,31 +20,31 @@ import com.x3squaredcircles.pixmap.shared.domain.valueobjects.Coordinate
 class SaveLocationCommandHandler(
     private val locationRepository: ILocationRepository,
     private val mediator: IMediator
-) : IRequestHandler<SaveLocationCommand, LocationDto> {
+) : IRequestHandler<SaveLocationCommand, Result<LocationDto>> {
 
-    override suspend fun handle(request: SaveLocationCommand): LocationDto {
-        try {
+    override suspend fun handle(request: SaveLocationCommand): Result<LocationDto> {
+        return try {
             val location: Location
 
             if (request.id != null) {
                 // Update existing location
                 val existingLocationResult = locationRepository.getByIdAsync(request.id)
 
-                if (!existingLocationResult.isSuccess || existingLocationResult.getOrNull() == null) {
+                if (!existingLocationResult.isSuccess || existingLocationResult.data == null) {
                     mediator.publish(
                         LocationSaveErrorEvent(
                             request.title,
-                            LocationErrorType.DATABASE_ERROR,
+                            LocationErrorType.DatabaseError,
                             "Location not found"
                         )
                     )
-                    throw IllegalArgumentException("Location not found")
+                    return Result.failure("Location not found")
                 }
 
-                location = existingLocationResult.getOrThrow()
+                location = existingLocationResult.data!!
                 location.updateDetails(request.title, request.description)
 
-                val newCoordinate = Coordinate.createValidated(request.latitude, request.longitude)
+                val newCoordinate = Coordinate(request.latitude, request.longitude)
                 location.updateCoordinate(newCoordinate)
 
                 if (!request.photoPath.isNullOrBlank()) {
@@ -55,15 +56,15 @@ class SaveLocationCommandHandler(
                     mediator.publish(
                         LocationSaveErrorEvent(
                             request.title,
-                            LocationErrorType.DATABASE_ERROR,
-                            updateResult.exceptionOrNull()?.message ?: "Update failed"
+                            LocationErrorType.DatabaseError,
+                            updateResult.errorMessage ?: "Update failed"
                         )
                     )
-                    throw RuntimeException("Location update failed")
+                    return Result.failure("Failed to update location")
                 }
             } else {
                 // Create new location
-                val coordinate = Coordinate.createValidated(request.latitude, request.longitude)
+                val coordinate = Coordinate(request.latitude, request.longitude)
                 val address = Address(request.city, request.state)
 
                 location = Location(
@@ -82,48 +83,39 @@ class SaveLocationCommandHandler(
                     mediator.publish(
                         LocationSaveErrorEvent(
                             request.title,
-                            LocationErrorType.DATABASE_ERROR,
-                            createResult.exceptionOrNull()?.message ?: "Create failed"
+                            LocationErrorType.DatabaseError,
+                            createResult.errorMessage ?: "Create failed"
                         )
                     )
-                    throw RuntimeException("Location creation failed")
+                    return Result.failure("Failed to create location")
                 }
             }
 
-            return mapToDto(location)
+            Result.success(mapToDto(location))
         } catch (ex: LocationDomainException) {
-            when (ex.code) {
-                "DUPLICATE_TITLE" -> {
-                    mediator.publish(
-                        LocationSaveErrorEvent(
-                            request.title,
-                            LocationErrorType.DUPLICATE_TITLE,
-                            ex.message ?: "Duplicate title"
-                        )
-                    )
-                    throw IllegalArgumentException("Duplicate location title: ${request.title}")
-                }
-                "INVALID_COORDINATES" -> {
-                    mediator.publish(
-                        LocationSaveErrorEvent(
-                            request.title,
-                            LocationErrorType.INVALID_COORDINATES,
-                            ex.message ?: "Invalid coordinates"
-                        )
-                    )
-                    throw IllegalArgumentException("Invalid coordinates")
-                }
-                else -> throw ex
+            val errorType = when (ex.code) {
+                "DUPLICATE_TITLE" -> LocationErrorType.ValidationError
+                "INVALID_COORDINATES" -> LocationErrorType.ValidationError
+                else -> LocationErrorType.DatabaseError
             }
+
+            mediator.publish(
+                LocationSaveErrorEvent(
+                    request.title,
+                    errorType,
+                    ex.message ?: "Domain exception"
+                )
+            )
+            Result.failure("Failed to save location: ${ex.message}")
         } catch (ex: Exception) {
             mediator.publish(
                 LocationSaveErrorEvent(
                     request.title,
-                    LocationErrorType.NETWORK_ERROR,
+                    LocationErrorType.NetworkError,
                     ex.message ?: "Save operation failed"
                 )
             )
-            throw RuntimeException("Failed to save location: ${ex.message}", ex)
+            Result.failure("Failed to save location: ${ex.message}")
         }
     }
 

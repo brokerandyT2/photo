@@ -1,7 +1,8 @@
-// shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/handlers/commands/RestoreLocationCommandHandler.kt
+//shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/handlers/commands/RestoreLocationCommandHandler.kt
 package com.x3squaredcircles.pixmap.shared.application.handlers.commands
 
 import com.x3squaredcircles.pixmap.shared.application.commands.RestoreLocationCommand
+import com.x3squaredcircles.pixmap.shared.application.common.models.Result
 import com.x3squaredcircles.pixmap.shared.application.dto.LocationDto
 import com.x3squaredcircles.pixmap.shared.application.events.LocationSaveErrorEvent
 import com.x3squaredcircles.pixmap.shared.application.events.LocationErrorType
@@ -15,24 +16,24 @@ import com.x3squaredcircles.pixmap.shared.application.interfaces.repositories.IL
 class RestoreLocationCommandHandler(
     private val locationRepository: ILocationRepository,
     private val mediator: IMediator
-) : IRequestHandler<RestoreLocationCommand, LocationDto> {
+) : IRequestHandler<RestoreLocationCommand, Result<LocationDto>> {
 
-    override suspend fun handle(request: RestoreLocationCommand): LocationDto {
-        try {
+    override suspend fun handle(request: RestoreLocationCommand): Result<LocationDto> {
+        return try {
             val locationResult = locationRepository.getByIdAsync(request.locationId)
 
-            if (!locationResult.isSuccess || locationResult.getOrNull() == null) {
+            if (!locationResult.isSuccess || locationResult.data == null) {
                 mediator.publish(
                     LocationSaveErrorEvent(
                         "Location ID ${request.locationId}",
-                        LocationErrorType.DATABASE_ERROR,
+                        LocationErrorType.DatabaseError,
                         "Location not found"
                     )
                 )
-                throw IllegalArgumentException("Location not found")
+                return Result.failure("Location not found")
             }
 
-            val location = locationResult.getOrThrow()
+            val location = locationResult.data!!
             location.restore()
 
             val updateResult = locationRepository.updateAsync(location)
@@ -40,23 +41,23 @@ class RestoreLocationCommandHandler(
                 mediator.publish(
                     LocationSaveErrorEvent(
                         location.title,
-                        LocationErrorType.DATABASE_ERROR,
-                        updateResult.exceptionOrNull()?.message ?: "Update failed"
+                        LocationErrorType.DatabaseError,
+                        updateResult.errorMessage ?: "Update failed"
                     )
                 )
-                throw RuntimeException("Location update failed")
+                return Result.failure("Failed to update location")
             }
 
-            return mapToDto(location)
+            Result.success(mapToDto(location))
         } catch (ex: Exception) {
             mediator.publish(
                 LocationSaveErrorEvent(
                     "Location ID ${request.locationId}",
-                    LocationErrorType.NETWORK_ERROR,
+                    LocationErrorType.NetworkError,
                     ex.message ?: "Restore operation failed"
                 )
             )
-            throw RuntimeException("Failed to restore location: ${ex.message}", ex)
+            Result.failure("Failed to restore location: ${ex.message}")
         }
     }
 

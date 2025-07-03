@@ -1,7 +1,7 @@
 // shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/interfaces/services/IErrorDisplayService.kt
 package com.x3squaredcircles.pixmap.shared.application.interfaces.services
 
-import com.x3squaredcircles.pixmap.shared.application.events.errors.DomainErrorEvent
+import com.x3squaredcircles.pixmap.shared.application.events.DomainErrorEvent
 import kotlinx.coroutines.flow.SharedFlow
 
 /**

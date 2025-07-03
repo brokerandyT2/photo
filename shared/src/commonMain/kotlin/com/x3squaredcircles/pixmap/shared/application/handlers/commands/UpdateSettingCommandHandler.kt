@@ -1,13 +1,13 @@
-// shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/handlers/commands/UpdateSettingCommandHandler.kt
+//shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/handlers/commands/UpdateSettingCommandHandler.kt
 package com.x3squaredcircles.pixmap.shared.application.handlers.commands
 
 import com.x3squaredcircles.pixmap.shared.application.commands.UpdateSettingCommand
-import com.x3squaredcircles.pixmap.shared.application.dto.UpdateSettingCommandResponse
 import com.x3squaredcircles.pixmap.shared.application.events.SettingErrorEvent
 import com.x3squaredcircles.pixmap.shared.application.events.SettingErrorType
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IMediator
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IRequestHandler
 import com.x3squaredcircles.pixmap.shared.application.interfaces.repositories.ISettingRepository
+import com.x3squaredcircles.pixmap.shared.domain.entities.Setting
 import com.x3squaredcircles.pixmap.shared.domain.exceptions.SettingDomainException
 
 /**
@@ -16,24 +16,24 @@ import com.x3squaredcircles.pixmap.shared.domain.exceptions.SettingDomainExcepti
 class UpdateSettingCommandHandler(
     private val settingRepository: ISettingRepository,
     private val mediator: IMediator
-) : IRequestHandler<UpdateSettingCommand, UpdateSettingCommandResponse> {
+) : IRequestHandler<UpdateSettingCommand, Setting> {
 
-    override suspend fun handle(request: UpdateSettingCommand): UpdateSettingCommandResponse {
+    override suspend fun handle(request: UpdateSettingCommand): Setting {
         try {
             val settingResult = settingRepository.getByKeyAsync(request.key)
 
-            if (!settingResult.isSuccess || settingResult.getOrNull() == null) {
+            if (!settingResult.isSuccess || settingResult.data == null) {
                 mediator.publish(
                     SettingErrorEvent(
-                        key = request.key,
-                        errorType = SettingErrorType.KEY_NOT_FOUND,
-                        message = "Setting not found"
+                        request.key,
+                        SettingErrorType.KEY_NOT_FOUND,
+                        "Setting not found"
                     )
                 )
                 throw IllegalArgumentException("Setting with key '${request.key}' not found")
             }
 
-            val setting = settingResult.getOrThrow()
+            val setting = settingResult.data!!
             setting.updateValue(request.value)
 
             val updateResult = settingRepository.updateAsync(setting)
@@ -41,31 +41,25 @@ class UpdateSettingCommandHandler(
             if (!updateResult.isSuccess) {
                 mediator.publish(
                     SettingErrorEvent(
-                        key = request.key,
-                        errorType = SettingErrorType.DATABASE_ERROR,
-                        message = updateResult.exceptionOrNull()?.message ?: "Update failed"
+                        request.key,
+                        SettingErrorType.DATABASE_ERROR,
+                        updateResult.errorMessage ?: "Update failed"
                     )
                 )
-                throw RuntimeException("Failed to update setting: ${updateResult.exceptionOrNull()?.message}")
+                throw RuntimeException("Failed to update setting: ${updateResult.errorMessage}")
             }
 
-            val updatedSetting = updateResult.getOrThrow()
+            val updatedSetting = updateResult.data!!
 
-            return UpdateSettingCommandResponse(
-                id = updatedSetting.id,
-                key = updatedSetting.key,
-                value = updatedSetting.value,
-                description = updatedSetting.description,
-                timestamp = updatedSetting.timestamp
-            )
+            return updatedSetting
         } catch (ex: SettingDomainException) {
             when (ex.code) {
                 "READ_ONLY_SETTING" -> {
                     mediator.publish(
                         SettingErrorEvent(
-                            key = request.key,
-                            errorType = SettingErrorType.READ_ONLY_SETTING,
-                            message = ex.message ?: "Cannot update read-only setting"
+                            request.key,
+                            SettingErrorType.READ_ONLY_SETTING,
+                            ex.message ?: "Cannot update read-only setting"
                         )
                     )
                     throw IllegalStateException("Cannot update read-only setting")
@@ -73,9 +67,9 @@ class UpdateSettingCommandHandler(
                 "INVALID_VALUE" -> {
                     mediator.publish(
                         SettingErrorEvent(
-                            key = request.key,
-                            errorType = SettingErrorType.INVALID_VALUE,
-                            message = ex.message ?: "Invalid value provided"
+                            request.key,
+                            SettingErrorType.INVALID_VALUE,
+                            ex.message ?: "Invalid value provided"
                         )
                     )
                     throw IllegalArgumentException("Invalid value provided")
@@ -85,9 +79,9 @@ class UpdateSettingCommandHandler(
         } catch (ex: Exception) {
             mediator.publish(
                 SettingErrorEvent(
-                    key = request.key,
-                    errorType = SettingErrorType.DATABASE_ERROR,
-                    message = ex.message ?: "Update operation failed"
+                    request.key,
+                    SettingErrorType.DATABASE_ERROR,
+                    ex.message ?: "Update operation failed"
                 )
             )
             throw RuntimeException("Failed to update setting: ${ex.message}", ex)

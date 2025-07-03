@@ -1,10 +1,19 @@
-// shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/handlers/queries/GetNearbyLocationsQueryHandler.kt
+//shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/handlers/queries/GetNearbyLocationsQueryHandler.kt
 package com.x3squaredcircles.pixmap.shared.application.handlers.queries
 
 import com.x3squaredcircles.pixmap.shared.application.dto.LocationListDto
+import com.x3squaredcircles.pixmap.shared.application.interfaces.IRequest
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IRequestHandler
 import com.x3squaredcircles.pixmap.shared.application.interfaces.repositories.ILocationRepository
-import com.x3squaredcircles.pixmap.shared.application.queries.GetNearbyLocationsQuery
+
+/**
+ * Query to get nearby locations
+ */
+data class GetNearbyLocationsQuery(
+    val latitude: Double,
+    val longitude: Double,
+    val distanceKm: Double = 10.0
+) : IRequest<List<LocationListDto>>
 
 /**
  * Handler for GetNearbyLocationsQuery
@@ -21,10 +30,10 @@ class GetNearbyLocationsQueryHandler(
         )
 
         if (!result.isSuccess) {
-            throw RuntimeException("Failed to retrieve nearby locations: ${result.exceptionOrNull()?.message}")
+            throw RuntimeException("Failed to retrieve nearby locations: ${result.errorMessage}")
         }
 
-        val locations = result.getOrNull() ?: emptyList()
+        val locations = result.data ?: emptyList()
 
         return locations.map { location ->
             LocationListDto(

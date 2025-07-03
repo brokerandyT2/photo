@@ -1,11 +1,16 @@
-// shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/handlers/queries/GetActiveLocationsQueryHandler.kt
-package com.x3squaredcircles.pixmap.shared.application.handlers.queries
+//shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/queries/GetActiveLocationsQuery.kt
+package com.x3squaredcircles.pixmap.shared.application.queries
 
 import com.x3squaredcircles.pixmap.shared.application.dto.LocationDto
+import com.x3squaredcircles.pixmap.shared.application.interfaces.IRequest
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IRequestHandler
 import com.x3squaredcircles.pixmap.shared.application.interfaces.repositories.ILocationRepository
-import com.x3squaredcircles.pixmap.shared.application.queries.GetActiveLocationsQuery
 import com.x3squaredcircles.pixmap.shared.domain.entities.Location
+
+/**
+ * Query to get active locations
+ */
+class GetActiveLocationsQuery : IRequest<List<LocationDto>>
 
 /**
  * Handler for GetActiveLocationsQuery
@@ -18,9 +23,9 @@ class GetActiveLocationsQueryHandler(
         val result = locationRepository.getActiveAsync()
 
         return if (result.isSuccess) {
-            result.getOrNull()?.map { location -> mapToDto(location) } ?: emptyList()
+            result.data?.map { location -> mapToDto(location) } ?: emptyList()
         } else {
-            throw RuntimeException(result.getOrNull()?.toString() ?: "Failed to get active locations")
+            throw RuntimeException(result.errorMessage ?: "Failed to get active locations")
         }
     }
 

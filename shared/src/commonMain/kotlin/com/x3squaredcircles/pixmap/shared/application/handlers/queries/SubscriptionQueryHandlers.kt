@@ -1,13 +1,62 @@
 //shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/handlers/queries/SubscriptionQueryHandlers.kt
 package com.x3squaredcircles.pixmap.shared.application.handlers.queries
 
+import com.x3squaredcircles.pixmap.shared.application.interfaces.IRequest
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IRequestHandler
 import com.x3squaredcircles.pixmap.shared.application.interfaces.repositories.ISubscriptionRepository
 import com.x3squaredcircles.pixmap.shared.application.interfaces.services.ILoggingService
-import com.x3squaredcircles.pixmap.shared.application.queries.*
 import com.x3squaredcircles.pixmap.shared.domain.entities.Subscription
-import com.x3squaredcircles.pixmap.shared.domain.entities.SubscriptionProduct
 import com.x3squaredcircles.pixmap.shared.domain.exceptions.SubscriptionDomainException
+
+/**
+ * Query to get the active subscription for a user
+ */
+data class GetActiveSubscriptionQuery(
+    val userId: String
+) : IRequest<Subscription?>
+
+/**
+ * Query to get subscription by transaction ID
+ */
+data class GetSubscriptionByTransactionIdQuery(
+    val transactionId: String
+) : IRequest<Subscription?>
+
+/**
+ * Query to get subscription by purchase token
+ */
+data class GetSubscriptionByPurchaseTokenQuery(
+    val purchaseToken: String
+) : IRequest<Subscription?>
+
+/**
+ * Query to get subscription by ID
+ */
+data class GetSubscriptionByIdQuery(
+    val subscriptionId: Int
+) : IRequest<Subscription?>
+
+/**
+ * Query to get all subscriptions for a user
+ */
+data class GetSubscriptionsByUserIdQuery(
+    val userId: String,
+    val includeInactive: Boolean = false
+) : IRequest<List<Subscription>>
+
+/**
+ * Query to get expired subscriptions
+ */
+data class GetExpiredSubscriptionsQuery(
+    val includeGracePeriod: Boolean = false
+) : IRequest<List<Subscription>>
+
+/**
+ * Query to check if user has any active subscription
+ */
+data class HasActiveSubscriptionQuery(
+    val userId: String
+) : IRequest<Boolean>
 
 /**
  * Handler for GetActiveSubscriptionQuery
@@ -27,7 +76,7 @@ class GetActiveSubscriptionQueryHandler(
                 return null
             }
 
-            val subscription = result.getOrNull()
+            val subscription = result.data
             logger.logInfo("Found active subscription: ${subscription?.id ?: "none"} for user: ${request.userId}")
             return subscription
 
@@ -56,7 +105,7 @@ class GetSubscriptionByTransactionIdQueryHandler(
                 return null
             }
 
-            val subscription = result.getOrNull()
+            val subscription = result.data
             logger.logInfo("Found subscription: ${subscription?.id ?: "none"} for transaction: ${request.transactionId}")
             return subscription
 
@@ -85,7 +134,7 @@ class GetSubscriptionByPurchaseTokenQueryHandler(
                 return null
             }
 
-            val subscription = result.getOrNull()
+            val subscription = result.data
             logger.logInfo("Found subscription: ${subscription?.id ?: "none"} for purchase token")
             return subscription
 
@@ -114,7 +163,7 @@ class GetSubscriptionByIdQueryHandler(
                 return null
             }
 
-            val subscription = result.getOrNull()
+            val subscription = result.data
             logger.logInfo("Found subscription: ${subscription?.id ?: "none"}")
             return subscription
 
@@ -143,7 +192,7 @@ class GetSubscriptionsByUserIdQueryHandler(
                 return emptyList()
             }
 
-            val subscriptions = result.getOrNull() ?: emptyList()
+            val subscriptions = result.data ?: emptyList()
 
             val filteredSubscriptions = if (request.includeInactive) {
                 subscriptions
@@ -179,49 +228,13 @@ class GetExpiredSubscriptionsQueryHandler(
                 return emptyList()
             }
 
-            val subscriptions = result.getOrNull() ?: emptyList()
-
-            val filteredSubscriptions = if (request.includeGracePeriod) {
-                subscriptions
-            } else {
-                subscriptions.filter { !it.isInGracePeriod() }
-            }
-
-            logger.logInfo("Found ${filteredSubscriptions.size} expired subscriptions")
-            return filteredSubscriptions
+            val subscriptions = result.data ?: emptyList()
+            logger.logInfo("Found ${subscriptions.size} expired subscriptions")
+            return subscriptions
 
         } catch (ex: Exception) {
             logger.logError("Error getting expired subscriptions", ex)
             throw SubscriptionDomainException.infrastructureError("GetExpiredSubscriptions", ex.message ?: "Unknown error", ex)
-        }
-    }
-}
-
-/**
- * Handler for GetSubscriptionsNeedingVerificationQuery
- */
-class GetSubscriptionsNeedingVerificationQueryHandler(
-    private val subscriptionRepository: ISubscriptionRepository,
-    private val logger: ILoggingService
-) : IRequestHandler<GetSubscriptionsNeedingVerificationQuery, List<Subscription>> {
-
-    override suspend fun handle(request: GetSubscriptionsNeedingVerificationQuery): List<Subscription> {
-        try {
-            logger.logInfo("Getting subscriptions needing verification")
-
-            val result = subscriptionRepository.getSubscriptionsNeedingVerificationAsync()
-            if (!result.isSuccess) {
-                logger.logWarning("Failed to get subscriptions needing verification")
-                return emptyList()
-            }
-
-            val subscriptions = result.getOrNull() ?: emptyList()
-            logger.logInfo("Found ${subscriptions.size} subscriptions needing verification")
-            return subscriptions
-
-        } catch (ex: Exception) {
-            logger.logError("Error getting subscriptions needing verification", ex)
-            throw SubscriptionDomainException.infrastructureError("GetSubscriptionsNeedingVerification", ex.message ?: "Unknown error", ex)
         }
     }
 }
@@ -244,13 +257,13 @@ class HasActiveSubscriptionQueryHandler(
                 return false
             }
 
-            val hasActiveSubscription = result.getOrNull()?.isActive() == true
+            val hasActiveSubscription = result.data != null
             logger.logInfo("User ${request.userId} has active subscription: $hasActiveSubscription")
             return hasActiveSubscription
 
         } catch (ex: Exception) {
             logger.logError("Error checking active subscription for user: ${request.userId}", ex)
-            return false
+            throw SubscriptionDomainException.infrastructureError("HasActiveSubscription", ex.message ?: "Unknown error", ex)
         }
     }
 }

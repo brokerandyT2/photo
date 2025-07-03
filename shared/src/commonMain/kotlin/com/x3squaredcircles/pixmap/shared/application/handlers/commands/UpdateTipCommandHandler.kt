@@ -1,8 +1,8 @@
-// shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/handlers/commands/UpdateTipCommandHandler.kt
+//shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/handlers/commands/UpdateTipCommandHandler.kt
 package com.x3squaredcircles.pixmap.shared.application.handlers.commands
 
 import com.x3squaredcircles.pixmap.shared.application.commands.UpdateTipCommand
-import com.x3squaredcircles.pixmap.shared.application.dto.UpdateTipCommandResponse
+import com.x3squaredcircles.pixmap.shared.application.dto.TipDto
 import com.x3squaredcircles.pixmap.shared.application.events.TipValidationErrorEvent
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IMediator
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IRequestHandler
@@ -15,46 +15,44 @@ import com.x3squaredcircles.pixmap.shared.domain.exceptions.TipDomainException
 class UpdateTipCommandHandler(
     private val tipRepository: ITipRepository,
     private val mediator: IMediator
-) : IRequestHandler<UpdateTipCommand, UpdateTipCommandResponse> {
+) : IRequestHandler<UpdateTipCommand, TipDto> {
 
-    override suspend fun handle(request: UpdateTipCommand): UpdateTipCommandResponse {
+    override suspend fun handle(request: UpdateTipCommand): TipDto {
         try {
             val tipResult = tipRepository.getByIdAsync(request.id)
 
-            if (!tipResult.isSuccess || tipResult.getOrNull() == null) {
+            if (!tipResult.isSuccess || tipResult.data == null) {
                 mediator.publish(
                     TipValidationErrorEvent(
                         tipId = request.id,
-                        tipTypeId = request.tipTypeId,
-                        errors = listOf("Not found error: Tip not found"),
-                        source = "UpdateTipCommandHandler"
+                        validationMessage = "Tip not found"
                     )
                 )
                 throw IllegalArgumentException("Tip not found")
             }
 
-            val tip = tipResult.getOrThrow()
+            val tip = tipResult.data!!
 
             // Update tip properties
             tip.updateContent(request.title, request.content)
 
             // Set photography parameters
             tip.updatePhotographySettings(
-                request.fstop ?: "",
-                request.shutterSpeed ?: "",
-                request.iso ?: ""
+                request.fstop,
+                request.shutterSpeed,
+                request.iso
             )
 
             // Update localization if provided, otherwise keep existing or default
-            tip.setLocalization(request.i8n ?: "en-US")
+            tip.setLocalization(request.i8n)
 
             val updateResult = tipRepository.updateAsync(tip)
             if (!updateResult.isSuccess) {
-                throw RuntimeException("Failed to update tip: ${updateResult.exceptionOrNull()?.message}")
+                throw RuntimeException("Failed to update tip: ${updateResult.errorMessage}")
             }
 
-            // Create response with the correct ID
-            return UpdateTipCommandResponse(
+            // Create response DTO
+            return TipDto(
                 id = tip.id,
                 tipTypeId = tip.tipTypeId,
                 title = tip.title,
@@ -70,9 +68,7 @@ class UpdateTipCommandHandler(
                     mediator.publish(
                         TipValidationErrorEvent(
                             tipId = request.id,
-                            tipTypeId = request.tipTypeId,
-                            errors = listOf("Title validation error: Duplicate title"),
-                            source = "UpdateTipCommandHandler"
+                            validationMessage = "Duplicate title"
                         )
                     )
                     throw IllegalArgumentException("Duplicate tip title: ${request.title}")
@@ -81,9 +77,7 @@ class UpdateTipCommandHandler(
                     mediator.publish(
                         TipValidationErrorEvent(
                             tipId = request.id,
-                            tipTypeId = request.tipTypeId,
-                            errors = listOf("Content validation error: Invalid content"),
-                            source = "UpdateTipCommandHandler"
+                            validationMessage = "Invalid content"
                         )
                     )
                     throw IllegalArgumentException("Invalid content")
@@ -94,9 +88,7 @@ class UpdateTipCommandHandler(
             mediator.publish(
                 TipValidationErrorEvent(
                     tipId = request.id,
-                    tipTypeId = request.tipTypeId,
-                    errors = listOf("Domain error: ${ex.message}"),
-                    source = "UpdateTipCommandHandler"
+                    validationMessage = ex.message ?: "Update operation failed"
                 )
             )
             throw RuntimeException("Failed to update tip: ${ex.message}", ex)

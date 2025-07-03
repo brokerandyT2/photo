@@ -1,65 +1,48 @@
-// shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/queries/GetLocationByIdQueryHandler.kt
-package com.x3squaredcircles.pixmap.shared.application.queries
+//shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/handlers/queries/GetLocationByIdQueryHandler.kt
+package com.x3squaredcircles.pixmap.shared.application.handlers.queries
 
-import com.x3squaredcircles.pixmap.shared.application.common.interfaces.IUnitOfWork
-import com.x3squaredcircles.pixmap.shared.application.common.models.Result
 import com.x3squaredcircles.pixmap.shared.application.dto.LocationDto
-import com.x3squaredcircles.pixmap.shared.application.events.`events/errors`.LocationSaveErrorEvent
-import com.x3squaredcircles.pixmap.shared.application.events.`events/errors`.LocationErrorType
-import com.x3squaredcircles.pixmap.shared.application.interfaces.IRequestHandler
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IMediator
-import com.x3squaredcircles.pixmap.shared.application.resources.AppResources
-import com.x3squaredcircles.pixmap.shared.domain.mappers.LocationMapper
-import kotlinx.coroutines.cancellation.CancellationException
+import com.x3squaredcircles.pixmap.shared.application.interfaces.IRequestHandler
+import com.x3squaredcircles.pixmap.shared.application.interfaces.repositories.ILocationRepository
+import com.x3squaredcircles.pixmap.shared.application.queries.GetLocationByIdQuery
 
 /**
- * Handles queries to retrieve a location by its unique identifier.
- *
- * This handler processes a [GetLocationByIdQuery] and returns a [Result] containing
- * a [LocationDto] if the location is found. If the location is not found, a failure result is returned.
+ * Handler for GetLocationByIdQuery
  */
 class GetLocationByIdQueryHandler(
-    private val unitOfWork: IUnitOfWork,
-    private val mapper: LocationMapper,
+    private val locationRepository: ILocationRepository,
     private val mediator: IMediator
 ) : IRequestHandler<GetLocationByIdQuery, LocationDto?> {
 
-    /**
-     * Handles the retrieval of a location by its unique identifier.
-     *
-     * @param request The query containing the unique identifier of the location to retrieve.
-     * @return A [Result] containing a [LocationDto] if the location is found; otherwise, a
-     * failure result with an appropriate error message.
-     * @throws CancellationException If the operation is cancelled.
-     */
-    override suspend fun handle(request: GetLocationByIdQuery): Result<LocationDto?> {
-        return try {
-            val locationResult = unitOfWork.locations.getByIdAsync(request.id)
+    override suspend fun handle(request: GetLocationByIdQuery): LocationDto? {
+        try {
+            val locationResult = locationRepository.getByIdAsync(request.id)
 
-            if (!locationResult.isSuccess || locationResult.data == null) {
-                mediator.publish(
-                    LocationSaveErrorEvent(
-                        message = AppResources.getLocationErrorNotFoundById(request.id),
-                        errorType = LocationErrorType.DatabaseError,
-                        details = AppResources.locationErrorNotFound
-                    )
-                )
-                return Result.failure(AppResources.locationErrorNotFound)
+            if (!locationResult.isSuccess) {
+                throw RuntimeException("Failed to retrieve location: ${locationResult.errorMessage}")
             }
 
-            val dto = mapper.toDto(locationResult.data)
-            Result.success(dto)
-        } catch (ex: CancellationException) {
-            throw ex
-        } catch (ex: Exception) {
-            mediator.publish(
-                LocationSaveErrorEvent(
-                    message = AppResources.getLocationErrorNotFoundById(request.id),
-                    errorType = LocationErrorType.DatabaseError,
-                    details = ex.message ?: "Unknown error"
-                )
+            val location = locationResult.data
+
+            if (location == null) {
+                return null
+            }
+
+            return LocationDto(
+                id = location.id,
+                title = location.title,
+                description = location.description,
+                latitude = location.coordinate.latitude,
+                longitude = location.coordinate.longitude,
+                city = location.address.city,
+                state = location.address.state,
+                photoPath = location.photoPath,
+                isDeleted = location.isDeleted,
+                timestamp = location.timestamp
             )
-            Result.failure(AppResources.getLocationErrorRetrieveFailed(ex.message ?: "Unknown error"))
+        } catch (ex: Exception) {
+            throw RuntimeException("Failed to get location by ID: ${ex.message}", ex)
         }
     }
 }
