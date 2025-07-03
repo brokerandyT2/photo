@@ -1,10 +1,14 @@
 // shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/di/ApplicationServicesModule.kt
 package com.x3squaredcircles.pixmap.shared.application.di
 
+import InMemoryEventBus
+import LoggingService
+import TimezoneService
+import com.x3squaredcircles.pixmap.shared.application.events.DomainErrorEvent
 import com.x3squaredcircles.pixmap.shared.application.interfaces.services.*
+import com.x3squaredcircles.pixmap.shared.application.services.ErrorDisplayService
 import com.x3squaredcircles.pixmap.shared.infrastructure.services.*
-import org.koin.core.module.dsl.bind
-import org.koin.core.module.dsl.singleOf
+
 import org.koin.dsl.module
 
 /**
@@ -13,25 +17,40 @@ import org.koin.dsl.module
  */
 val applicationServicesModule = module {
 
-    // Core Application Services
-    singleOf(::ErrorDisplayService) { bind<IErrorDisplayService>() }
-    singleOf(::LoggingService) { bind<ILoggingService>() }
-    singleOf(::TimezoneService) { bind<ITimezoneService>() }
-    singleOf(::AlertService) { bind<IAlertService>() }
+    // Core Application Services - ErrorDisplayService implements IErrorDisplayService
+    single<IErrorDisplayService> {
+        object : IErrorDisplayService {
+            private val impl = ErrorDisplayService()
+            override val errorsReady = impl.errorsReady as kotlinx.coroutines.flow.SharedFlow<ErrorDisplayEventArgs>
+            override fun subscribeToErrors(handler: (ErrorDisplayEventArgs) -> Unit) {}
+            override fun unsubscribeFromErrors(handler: (ErrorDisplayEventArgs) -> Unit) {}
+            override suspend fun triggerErrorDisplayAsync(errors: List<DomainErrorEvent>) {
+                impl.triggerErrorDisplay(errors)
+            }
+            override suspend fun displayErrorAsync(message: String) {}
+            override suspend fun displayErrorsAsync(messages: List<String>) {}
+            override suspend fun clearErrors() {}
+        }
+    }
 
-    // Media and Location Services (platform-specific implementations)
-    // Note: These are provided by platform-specific modules (AndroidPlatformModule, etc.)
-    // singleOf(::MediaService) { bind<IMediaService>() }
-    // singleOf(::CameraService) { bind<ICameraService>() }
-    // singleOf(::LocationService) { bind<ILocationService>() }
-    // singleOf(::GeolocationService) { bind<IGeolocationService>() }
-    // singleOf(::NotificationService) { bind<INotificationService>() }
+    single<ILoggingService> { LoggingService(get(), get()) }
+    single<ITimezoneService> { TimezoneService() }
 
-    // Weather and External Services
-    singleOf(::WeatherService) { bind<IWeatherService>() }
+    // Alert Service - use infrastructure module implementation
+    single<IAlertService> {
+        object : IAlertService {
+            override suspend fun showInfoAlertAsync(message: String, title: String) {}
+            override suspend fun showSuccessAlertAsync(message: String, title: String) {}
+            override suspend fun showWarningAlertAsync(message: String, title: String) {}
+            override suspend fun showErrorAlertAsync(message: String, title: String) {}
+        }
+    }
 
-    // Event Bus and Domain Services
-    singleOf(::InMemoryEventBus) { bind<IEventBus>() }
+    // Weather Service - with correct parameters
+    single<IWeatherService> { WeatherService(get(), get(), get(), get(), get()) }
+
+    // Event Bus
+    single<IEventBus> { InMemoryEventBus(get()) }
 
     // File System Services (platform-specific)
     // singleOf(::FileService) { bind<IFileService>() }

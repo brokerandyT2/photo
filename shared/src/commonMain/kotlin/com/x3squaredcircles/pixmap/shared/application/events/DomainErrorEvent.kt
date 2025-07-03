@@ -1,6 +1,7 @@
 // shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/events/errors/DomainErrorEvent.kt
-package com.x3squaredcircles.pixmap.shared.application.events.`events/errors`
+package com.x3squaredcircles.pixmap.shared.application.events
 
+import com.x3squaredcircles.pixmap.shared.application.interfaces.INotification
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
 import kotlinx.uuid.UUID
@@ -59,44 +60,7 @@ enum class ErrorSeverity {
 /**
  * Location-specific error event
  */
-class LocationSaveErrorEvent(
-    val locationTitle: String,
-    val errorType: LocationErrorType,
-    val additionalContext: String? = null,
-    source: String = "LocationCommandHandler"
-) : DomainErrorEvent(source) {
 
-    override val message: String
-        get() = "Location save error: ${errorType.name} for '$locationTitle'"
-
-    override fun getErrorType(): String {
-        return when (errorType) {
-            LocationErrorType.DUPLICATE_TITLE -> "Location_Error_DuplicateTitle"
-            LocationErrorType.INVALID_COORDINATES -> "Location_Error_InvalidCoordinates"
-            LocationErrorType.NETWORK_ERROR -> "Location_Error_NetworkError"
-            LocationErrorType.DATABASE_ERROR -> "Location_Error_DatabaseError"
-            LocationErrorType.VALIDATION_ERROR -> "Location_Error_ValidationError"
-        }
-    }
-
-    override fun getParameters(): Map<String, Any> {
-        val parameters = mutableMapOf<String, Any>(
-            "LocationTitle" to locationTitle
-        )
-
-        additionalContext?.let { parameters["AdditionalContext"] = it }
-
-        return parameters
-    }
-}
-
-enum class LocationErrorType {
-    DUPLICATE_TITLE,
-    INVALID_COORDINATES,
-    NETWORK_ERROR,
-    DATABASE_ERROR,
-    VALIDATION_ERROR
-}
 
 /**
  * Setting-specific error event
@@ -106,7 +70,7 @@ class SettingErrorEvent(
     val errorType: SettingErrorType,
     val additionalContext: String? = null,
     source: String = "SettingCommandHandler"
-) : DomainErrorEvent(source) {
+) : DomainErrorEvent(source), INotification {
 
     override val message: String
         get() = "Setting error: ${errorType.name} for key '$settingKey'"
@@ -143,40 +107,7 @@ enum class SettingErrorType {
 /**
  * Validation-specific error event
  */
-class ValidationErrorEvent(
-    val entityType: String,
-    val validationErrors: Map<String, List<String>>,
-    source: String
-) : DomainErrorEvent(source) {
 
-    override val message: String
-        get() = "Validation failed for $entityType with ${validationErrors.size} errors"
-
-    override fun getErrorType(): String {
-        return if (validationErrors.size == 1) {
-            "Validation_Error_Single"
-        } else {
-            "Validation_Error_Multiple"
-        }
-    }
-
-    override fun getParameters(): Map<String, Any> {
-        val parameters = mutableMapOf<String, Any>(
-            "EntityType" to entityType,
-            "ErrorCount" to validationErrors.size
-        )
-
-        if (validationErrors.size == 1) {
-            val firstError = validationErrors.entries.first()
-            parameters["PropertyName"] = firstError.key
-            parameters["ErrorMessage"] = firstError.value.first()
-        }
-
-        return parameters
-    }
-
-    override val severity: ErrorSeverity = ErrorSeverity.WARNING
-}
 
 /**
  * Weather-specific error event

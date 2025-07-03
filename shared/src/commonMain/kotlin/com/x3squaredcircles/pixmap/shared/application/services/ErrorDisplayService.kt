@@ -1,7 +1,7 @@
 // shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/services/ErrorDisplayService.kt
 package com.x3squaredcircles.pixmap.shared.application.services
 
-import com.x3squaredcircles.pixmap.shared.application.events.`events/errors`.DomainErrorEvent
+import com.x3squaredcircles.pixmap.shared.application.events.DomainErrorEvent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel

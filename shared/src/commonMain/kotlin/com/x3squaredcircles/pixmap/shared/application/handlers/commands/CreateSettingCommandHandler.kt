@@ -2,14 +2,32 @@
 package com.x3squaredcircles.pixmap.shared.application.handlers.commands
 
 import com.x3squaredcircles.pixmap.shared.application.commands.CreateSettingCommand
-import com.x3squaredcircles.pixmap.shared.application.dto.CreateSettingCommandResponse
 import com.x3squaredcircles.pixmap.shared.application.events.SettingErrorEvent
 import com.x3squaredcircles.pixmap.shared.application.events.SettingErrorType
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IMediator
+import com.x3squaredcircles.pixmap.shared.application.interfaces.IRequest
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IRequestHandler
 import com.x3squaredcircles.pixmap.shared.application.interfaces.repositories.ISettingRepository
+import com.x3squaredcircles.pixmap.shared.domain.common.Result
 import com.x3squaredcircles.pixmap.shared.domain.entities.Setting
 import com.x3squaredcircles.pixmap.shared.domain.exceptions.SettingDomainException
+import kotlinx.datetime.Instant
+
+/**
+ * Response for CreateSettingCommand
+ */
+data class CreateSettingCommandResponse(
+    val id: Int,
+    val key: String,
+    val value: String,
+    val description: String,
+    val timestamp: Instant
+)
+
+/**
+ * Make CreateSettingCommand implement IRequest
+ */
+interface CreateSettingCommandRequest : IRequest<CreateSettingCommandResponse>
 
 /**
  * Handler for CreateSettingCommand
@@ -17,27 +35,29 @@ import com.x3squaredcircles.pixmap.shared.domain.exceptions.SettingDomainExcepti
 class CreateSettingCommandHandler(
     private val settingRepository: ISettingRepository,
     private val mediator: IMediator
-) : IRequestHandler<CreateSettingCommand, CreateSettingCommandResponse> {
+) : IRequestHandler<CreateSettingCommandRequest, CreateSettingCommandResponse> {
 
-    override suspend fun handle(request: CreateSettingCommand): CreateSettingCommandResponse {
+    override suspend fun handle(request: CreateSettingCommandRequest): CreateSettingCommandResponse {
+        val createRequest = request as CreateSettingCommand
+
         try {
-            val existingSettingResult = settingRepository.getByKeyAsync(request.key)
+            val existingSettingResult = settingRepository.getByKeyAsync(createRequest.key)
 
-            if (existingSettingResult.isSuccess && existingSettingResult.getOrNull() != null) {
+            if (existingSettingResult.isSuccess && existingSettingResult.data != null) {
                 mediator.publish(
                     SettingErrorEvent(
-                        key = request.key,
+                        settingKey = createRequest.key,
                         errorType = SettingErrorType.DUPLICATE_KEY,
-                        message = "Setting with this key already exists"
+                        additionalContext = "Setting with this key already exists"
                     )
                 )
-                throw IllegalArgumentException("Setting with key '${request.key}' already exists")
+                throw IllegalArgumentException("Setting with key '${createRequest.key}' already exists")
             }
 
             val setting = Setting(
-                key = request.key,
-                value = request.value,
-                description = request.description
+                key = createRequest.key,
+                value = createRequest.value,
+                description = createRequest.description
             )
 
             val result = settingRepository.createAsync(setting)
@@ -45,41 +65,41 @@ class CreateSettingCommandHandler(
             if (!result.isSuccess) {
                 mediator.publish(
                     SettingErrorEvent(
-                        key = request.key,
+                        settingKey = createRequest.key,
                         errorType = SettingErrorType.DATABASE_ERROR,
-                        message = result.exceptionOrNull()?.message ?: "Create failed"
+                        additionalContext = result.data?.description ?: "Create failed"
                     )
                 )
-                throw RuntimeException("Failed to create setting: ${result.exceptionOrNull()?.message}")
+                throw RuntimeException("Failed to create setting: ${result.data?.description}")
             }
 
-            val createdSetting = result.getOrThrow()
+            val createdSetting = result.data
 
             return CreateSettingCommandResponse(
-                id = createdSetting.id,
-                key = createdSetting.key,
-                value = createdSetting.value,
-                description = createdSetting.description,
-                timestamp = createdSetting.timestamp
+                id = setting.id ,
+                key = setting.key,
+                value = setting.value,
+                description = setting.description,
+                timestamp = setting.timestamp
             )
         } catch (ex: SettingDomainException) {
             when (ex.code) {
                 "DUPLICATE_KEY" -> {
                     mediator.publish(
                         SettingErrorEvent(
-                            key = request.key,
+                            settingKey = createRequest.key,
                             errorType = SettingErrorType.DUPLICATE_KEY,
-                            message = ex.message ?: "Duplicate key"
+                            additionalContext = ex.message ?: "Duplicate key"
                         )
                     )
-                    throw IllegalArgumentException("Setting with key '${request.key}' already exists")
+                    throw IllegalArgumentException("Setting with key '${createRequest.key}' already exists")
                 }
                 "INVALID_VALUE" -> {
                     mediator.publish(
                         SettingErrorEvent(
-                            key = request.key,
+                            settingKey = createRequest.key,
                             errorType = SettingErrorType.INVALID_VALUE,
-                            message = ex.message ?: "Invalid value"
+                            additionalContext = ex.message ?: "Invalid value"
                         )
                     )
                     throw IllegalArgumentException("Invalid value provided")
@@ -89,9 +109,9 @@ class CreateSettingCommandHandler(
         } catch (ex: Exception) {
             mediator.publish(
                 SettingErrorEvent(
-                    key = request.key,
+                    settingKey = createRequest.key,
                     errorType = SettingErrorType.DATABASE_ERROR,
-                    message = ex.message ?: "Create operation failed"
+                    additionalContext = ex.message ?: "Create operation failed"
                 )
             )
             throw RuntimeException("Failed to create setting: ${ex.message}", ex)
