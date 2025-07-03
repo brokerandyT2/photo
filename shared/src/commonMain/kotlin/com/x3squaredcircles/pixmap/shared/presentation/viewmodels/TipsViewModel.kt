@@ -1,13 +1,19 @@
 // shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/presentation/viewmodels/TipsViewModel.kt
 package com.x3squaredcircles.pixmap.shared.presentation.viewmodels
 
-import com.x3squaredcircles.pixmap.shared.application.dto.TipDto
-import com.x3squaredcircles.pixmap.shared.application.dto.TipTypeDto
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IMediator
 import com.x3squaredcircles.pixmap.shared.application.interfaces.services.IErrorDisplayService
 import com.x3squaredcircles.pixmap.shared.application.queries.GetAllTipTypesQuery
-import com.x3squaredcircles.pixmap.shared.application.queries.GetTipsByTypeQuery
+
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
+
+/**
+ * Query to get tips by type
+ */
+data class GetTipsByTypeQuery(
+    val tipTypeId: Int
+) : com.x3squaredcircles.pixmap.shared.application.interfaces.IRequest<List<com.x3squaredcircles.pixmap.shared.domain.entities.Tip>>
 
 /**
  * View model for displaying photography tips organized by categories
@@ -52,67 +58,59 @@ class TipsViewModel(
     /**
      * Loads all available tip types
      */
-    suspend fun loadTipTypes() = executeSafely {
-        val query = GetAllTipTypesQuery()
-        val result = mediator.send(query)
+    suspend fun loadTipTypes() = executeSafely(
+        operation = {
+            val query = GetAllTipTypesQuery()
+            val tipTypes = mediator.send(query)
 
-        when {
-            result.isSuccess && result.data != null -> {
-                val tipTypeViewModels = result.data.map { dto ->
-                    TipTypeItemViewModel(
-                        id = dto.id,
-                        name = dto.name,
-                        i8n = dto.i8n
-                    )
-                }
+            val tipTypeViewModels = tipTypes.map { entity ->
+                TipTypeItemViewModel(
+                    id = entity.id,
+                    name = entity.name,
+                    i8n = entity.i8n ?: "en-US"
+                )
+            }
 
-                _tipTypes.value = tipTypeViewModels
+            _tipTypes.value = tipTypeViewModels
 
-                // Set default selected tip type if available
-                if (tipTypeViewModels.isNotEmpty()) {
+            // Set default selected tip type if available
+            if (tipTypeViewModels.isNotEmpty()) {
+                viewModelScope.launch {
                     selectTipType(tipTypeViewModels.first())
                 }
             }
-            else -> {
-                onSystemError(result.errorMessage ?: "Failed to load tip types")
-            }
         }
-    }
+    )
 
     /**
      * Loads tips for a specific tip type
      */
-    suspend fun loadTipsByType(tipTypeId: Int) = executeSafely {
-        if (tipTypeId <= 0) {
-            setValidationError("Please select a valid tip type")
-            return@executeSafely
-        }
-
-        val query = GetTipsByTypeQuery(tipTypeId)
-        val result = mediator.send(query)
-
-        when {
-            result.isSuccess && result.data != null -> {
-                val tipViewModels = result.data.map { dto ->
-                    TipItemViewModel(
-                        id = dto.id,
-                        tipTypeId = dto.tipTypeId,
-                        title = dto.title,
-                        content = dto.content,
-                        fstop = dto.fstop,
-                        shutterSpeed = dto.shutterSpeed,
-                        iso = dto.iso,
-                        i8n = dto.i8n
-                    )
-                }
-
-                _tips.value = tipViewModels
+    suspend fun loadTipsByType(tipTypeId: Int) = executeSafely(
+        operation = {
+            if (tipTypeId <= 0) {
+                setValidationError("Please select a valid tip type")
+                return@executeSafely
             }
-            else -> {
-                onSystemError(result.errorMessage ?: "Failed to load tips")
+
+            val query = GetTipsByTypeQuery(tipTypeId)
+            val tips = mediator.send(query)
+
+            val tipViewModels = tips.map { entity ->
+                TipItemViewModel(
+                    id = entity.id,
+                    tipTypeId = entity.tipTypeId,
+                    title = entity.title,
+                    content = entity.content,
+                    fstop = entity.fstop ?: "",
+                    shutterSpeed = entity.shutterSpeed ?: "",
+                    iso = entity.iso ?: "",
+                    i8n = entity.i8n ?: "en-US"
+                )
             }
+
+            _tips.value = tipViewModels
         }
-    }
+    )
 
     /**
      * Selects a tip type and loads its associated tips
@@ -203,29 +201,13 @@ data class TipItemViewModel(
         }.trim()
 
     /**
-     * Short preview of content for list display
+     * Summary text for display
      */
-    val contentPreview: String
+    val summaryText: String
         get() = if (content.length > 100) {
             content.take(97) + "..."
         } else {
             content
-        }
-
-    /**
-     * Whether this tip has extended content
-     */
-    val hasExtendedContent: Boolean
-        get() = content.length > 100
-
-    /**
-     * Formatted camera settings for detailed view
-     */
-    val detailedCameraSettings: List<Pair<String, String>>
-        get() = buildList {
-            if (fstop.isNotEmpty()) add("Aperture" to "f/$fstop")
-            if (shutterSpeed.isNotEmpty()) add("Shutter Speed" to shutterSpeed)
-            if (iso.isNotEmpty()) add("ISO" to iso)
         }
 }
 
@@ -238,14 +220,8 @@ data class TipTypeItemViewModel(
     val i8n: String
 ) {
     /**
-     * Display name for the tip type
+     * Display name with proper formatting
      */
     val displayName: String
-        get() = name.ifEmpty { "Unknown Type" }
-
-    /**
-     * Whether this is a localized tip type
-     */
-    val isLocalized: Boolean
-        get() = i8n != "en-US"
+        get() = name.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
 }

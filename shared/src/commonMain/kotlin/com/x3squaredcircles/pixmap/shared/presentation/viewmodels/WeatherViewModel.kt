@@ -5,13 +5,29 @@ import com.x3squaredcircles.pixmap.shared.application.commands.UpdateWeatherComm
 import com.x3squaredcircles.pixmap.shared.application.dto.WeatherForecastDto
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IMediator
 import com.x3squaredcircles.pixmap.shared.application.interfaces.services.IErrorDisplayService
-import com.x3squaredcircles.pixmap.shared.application.queries.GetWeatherForecastQuery
+
 import kotlinx.coroutines.flow.*
-import kotlinx.datetime.Instant
+import kotlinx.datetime.Clock
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
+import kotlinx.datetime.DayOfWeek
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.LocalTime
+import kotlinx.datetime.LocalDate
+import kotlinx.coroutines.launch
+import kotlinx.datetime.Instant
+import kotlinx.datetime.toInstant
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.round
+
+/**
+ * Query to get weather forecast for coordinates
+ */
+data class GetWeatherForecastQuery(
+    val latitude: Double,
+    val longitude: Double,
+    val days: Int = 7
+) : com.x3squaredcircles.pixmap.shared.application.interfaces.IRequest<WeatherForecastDto>
 
 /**
  * View model for weather data display with optimized performance patterns
@@ -52,48 +68,36 @@ class WeatherViewModel(
     /**
      * Loads weather data for a specific location
      */
-    suspend fun loadWeather(locationId: Int) = executeSafely {
-        setLocationId(locationId)
+    suspend fun loadWeather(locationId: Int) = executeSafely(
+        operation = {
+            setLocationId(locationId)
 
-        // Update weather data with force refresh
-        val updateCommand = UpdateWeatherCommand(
-            locationId = locationId,
-            forceUpdate = true
-        )
+            // Update weather data with force refresh
+            val updateCommand = UpdateWeatherCommand(
+                locationId = locationId,
+                forceUpdate = true
+            )
 
-        val updateResult = mediator.send(updateCommand)
+            val weatherData = mediator.send(updateCommand)
 
-        when {
-            !updateResult.isSuccess || updateResult.data == null -> {
-                onSystemError(updateResult.errorMessage ?: "Failed to load weather data")
-                return@executeSafely
+            // Get forecast data in parallel
+            val forecastQuery = GetWeatherForecastQuery(
+                latitude = weatherData.latitude,
+                longitude = weatherData.longitude,
+                days = 5 // Today + next 4 days for display
+            )
+
+            viewModelScope.launch {
+                val forecastData = mediator.send(forecastQuery)
+
+                // Store forecast data
+                _weatherForecast.value = forecastData
+
+                // Process forecast data for UI display
+                processForecastData(forecastData)
             }
         }
-
-        val weatherData = updateResult.data
-
-        // Get forecast data in parallel
-        val forecastQuery = GetWeatherForecastQuery(
-            latitude = weatherData.latitude,
-            longitude = weatherData.longitude,
-            days = 5 // Today + next 4 days for display
-        )
-
-        val forecastResult = mediator.send(forecastQuery)
-
-        when {
-            !forecastResult.isSuccess || forecastResult.data == null -> {
-                onSystemError(forecastResult.errorMessage ?: "Failed to load forecast data")
-                return@executeSafely
-            }
-        }
-
-        // Store forecast data
-        _weatherForecast.value = forecastResult.data
-
-        // Process forecast data for UI display
-        processForecastData(forecastResult.data)
-    }
+    )
 
     /**
      * Refreshes weather data for current location
@@ -114,7 +118,7 @@ class WeatherViewModel(
             return
         }
 
-        val today = kotlinx.datetime.Clock.System.todayIn(TimeZone.currentSystemDefault())
+        val today = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
         val processedItems = forecast.dailyForecasts.take(5).mapIndexed { index, dailyForecast ->
             val isToday = index == 0 // First item is typically today
 
@@ -139,11 +143,12 @@ class WeatherViewModel(
             windSpeedFormat.format(it) + " mph"
         } ?: "N/A"
 
-        val localDate = dailyForecast.date.toLocalDateTime(TimeZone.currentSystemDefault())
+        val localDate = dailyForecast.date
+        val localDateTime = LocalDateTime(localDate, LocalTime(0, 0))
 
         return DailyWeatherViewModel(
-            date = dailyForecast.date,
-            dayName = if (isToday) "Today" else "${localDate.dayOfWeek}",
+            date = localDateTime.toInstant(TimeZone.currentSystemDefault()),
+            dayName = if (isToday) "Today" else "${localDateTime.dayOfWeek}",
             description = dailyForecast.description,
             minTemperature = minTemp,
             maxTemperature = maxTemp,
@@ -249,50 +254,11 @@ data class DailyWeatherViewModel(
      * Formatted pressure display
      */
     val formattedPressure: String
-        get() = "${pressure} hPa"
+        get() = "$pressure hPa"
 
     /**
      * Formatted UV index display
      */
     val formattedUvIndex: String
-        get() = "%.1f".format(uvIndex)
-
-    /**
-     * Wind direction as compass bearing
-     */
-    val windDirectionText: String
-        get() = when {
-            windDirection < 11.25 || windDirection >= 348.75 -> "N"
-            windDirection < 33.75 -> "NNE"
-            windDirection < 56.25 -> "NE"
-            windDirection < 78.75 -> "ENE"
-            windDirection < 101.25 -> "E"
-            windDirection < 123.75 -> "ESE"
-            windDirection < 146.25 -> "SE"
-            windDirection < 168.75 -> "SSE"
-            windDirection < 191.25 -> "S"
-            windDirection < 213.75 -> "SSW"
-            windDirection < 236.25 -> "SW"
-            windDirection < 258.75 -> "WSW"
-            windDirection < 281.25 -> "W"
-            windDirection < 303.75 -> "WNW"
-            windDirection < 326.25 -> "NW"
-            windDirection < 348.75 -> "NNW"
-            else -> "N"
-        }
-
-    /**
-     * Complete wind information display
-     */
-    val windInfo: String
-        get() = "$windSpeed $windDirectionText" + if (windGust != "N/A") " (gusts $windGust)" else ""
-
-    /**
-     * Formatted date for display
-     */
-    val formattedDate: String
-        get() {
-            val localDateTime = date.toLocalDateTime(TimeZone.currentSystemDefault())
-            return "${localDateTime.month} ${localDateTime.dayOfMonth}"
-        }
+        get() = round(uvIndex).toInt().toString()
 }

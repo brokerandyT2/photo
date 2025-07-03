@@ -2,6 +2,9 @@
 
 import com.x3squaredcircles.pixmap.shared.application.interfaces.services.ILoggingService
 import com.x3squaredcircles.pixmap.shared.application.interfaces.services.LogLevel
+import com.x3squaredcircles.pixmap.shared.application.interfaces.services.SecuritySeverity
+import com.x3squaredcircles.pixmap.shared.application.interfaces.services.LogEntry
+import com.x3squaredcircles.pixmap.shared.application.interfaces.services.TimedOperation
 import com.x3squaredcircles.pixmap.shared.infrastructure.data.IDatabaseContext
 import com.x3squaredcircles.pixmap.shared.infrastructure.data.entities.LogEntity
 import kotlinx.coroutines.CoroutineScope
@@ -10,19 +13,64 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
-import kotlinx.coroutines.logging.Logger
+
+/**
+ * Concrete logger implementation for the shared module
+ */
+private class ConcreteLogger {
+    fun debug(message: String) = println("DEBUG: $message")
+    fun info(message: String) = println("INFO: $message")
+    fun warning(message: String) = println("WARNING: $message")
+    fun error(message: String, exception: Throwable? = null) {
+        println("ERROR: $message")
+        exception?.printStackTrace()
+    }
+}
 
 /**
  * Logging service implementation with database persistence and fault tolerance
  */
 class LoggingService(
-    private val databaseContext: IDatabaseContext,
-    private val logger: Logger
+    private val databaseContext: IDatabaseContext
 ) : ILoggingService {
 
+    private val logger = ConcreteLogger()
     private var currentLogLevel = LogLevel.INFO
     private var loggingEnabled = true
     private val loggingScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+
+    // ILoggingService interface methods
+    override fun debug(message: String, vararg args: Any?) {
+        logMessage(LogLevel.DEBUG, formatMessage(message, args), null, null)
+    }
+
+    override fun info(message: String, vararg args: Any?) {
+        logMessage(LogLevel.INFO, formatMessage(message, args), null, null)
+    }
+
+    override fun warning(message: String, vararg args: Any?) {
+        logMessage(LogLevel.WARNING, formatMessage(message, args), null, null)
+    }
+
+    override fun error(message: String, vararg args: Any?) {
+        logMessage(LogLevel.ERROR, formatMessage(message, args), null, null)
+    }
+
+    override fun error(message: String, exception: Throwable, vararg args: Any?) {
+        logMessage(LogLevel.ERROR, formatMessage(message, args), exception, null)
+    }
+
+    override fun critical(message: String, vararg args: Any?) {
+        logMessage(LogLevel.CRITICAL, formatMessage(message, args), null, null)
+    }
+
+    override fun critical(message: String, exception: Throwable, vararg args: Any?) {
+        logMessage(LogLevel.CRITICAL, formatMessage(message, args), exception, null)
+    }
+
+    override fun logDebug(message: String, tag: String?) {
+        logMessage(LogLevel.DEBUG, message, null, tag)
+    }
 
     override fun logInfo(message: String, tag: String?) {
         logMessage(LogLevel.INFO, message, null, tag)
@@ -34,10 +82,6 @@ class LoggingService(
 
     override fun logError(message: String, exception: Throwable?, tag: String?) {
         logMessage(LogLevel.ERROR, message, exception, tag)
-    }
-
-    override fun logDebug(message: String, tag: String?) {
-        logMessage(LogLevel.DEBUG, message, null, tag)
     }
 
     override fun logVerbose(message: String, tag: String?) {
@@ -69,16 +113,83 @@ class LoggingService(
         logError(message, exception, "OPERATION")
     }
 
-    override fun setLogLevel(level: LogLevel) {
+    override fun performance(operation: String, durationMs: Long, success: Boolean) {
+        val status = if (success) "SUCCESS" else "FAILURE"
+        val message = "Performance: $operation | Duration: ${durationMs}ms | Status: $status"
+        logInfo(message, "PERFORMANCE")
+    }
+
+    override fun userActivity(activity: String, properties: Map<String, Any?>) {
+        val propertiesString = if (properties.isNotEmpty()) {
+            " | Properties: ${properties.entries.joinToString(", ") { "${it.key}=${it.value}" }}"
+        } else ""
+
+        val message = "User Activity: $activity$propertiesString"
+        logInfo(message, "USER_ACTIVITY")
+    }
+
+    override fun security(event: String, severity: SecuritySeverity, properties: Map<String, Any?>) {
+        val propertiesString = if (properties.isNotEmpty()) {
+            " | Properties: ${properties.entries.joinToString(", ") { "${it.key}=${it.value}" }}"
+        } else ""
+
+        val message = "Security Event: $event | Severity: $severity$propertiesString"
+
+        when (severity) {
+            SecuritySeverity.LOW -> logInfo(message, "SECURITY")
+            SecuritySeverity.MEDIUM -> logWarning(message, "SECURITY")
+            SecuritySeverity.HIGH -> logError(message, null, "SECURITY")
+            SecuritySeverity.CRITICAL -> critical(message)
+        }
+    }
+
+    override fun structured(
+        level: LogLevel,
+        message: String,
+        category: String,
+        properties: Map<String, Any?>,
+        exception: Throwable?
+    ) {
+        val propertiesString = if (properties.isNotEmpty()) {
+            " | Properties: ${properties.entries.joinToString(", ") { "${it.key}=${it.value}" }}"
+        } else ""
+
+        val structuredMessage = "[$category] $message$propertiesString"
+        logMessage(level, structuredMessage, exception, category)
+    }
+
+    override fun beginTimedOperation(operationName: String): TimedOperation {
+        return TimedOperationImpl(operationName, this)
+    }
+
+    override suspend fun flush() {
+        // Implementation would flush any pending log entries
+        // For now, this is a no-op since we log synchronously
+    }
+
+    override fun setMinimumLevel(level: LogLevel) {
         currentLogLevel = level
         logInfo("Log level changed to $level", "LOGGING")
     }
 
-    override fun setLoggingEnabled(enabled: Boolean) {
-        loggingEnabled = enabled
-        if (enabled) {
-            logInfo("Logging enabled", "LOGGING")
-        }
+    override fun getMinimumLevel(): LogLevel {
+        return currentLogLevel
+    }
+
+    override fun isEnabled(level: LogLevel): Boolean {
+        return loggingEnabled && level.priority >= currentLogLevel.priority
+    }
+
+    override fun withCorrelationId(correlationId: String): ILoggingService {
+        // For now, return the same instance
+        // In a full implementation, this would wrap the logger with correlation context
+        return this
+    }
+
+    override fun withUserContext(userId: String?, userEmail: String?): ILoggingService {
+        // For now, return the same instance
+        // In a full implementation, this would wrap the logger with user context
+        return this
     }
 
     // Database operations
@@ -93,9 +204,7 @@ class LoggingService(
                 tag = tag ?: ""
             )
 
-            databaseContext.insertAsync(logEntity) { entity ->
-                insertLog(entity)
-            }
+            databaseContext.insertAsync(logEntity)
         } catch (ex: Exception) {
             // If we can't log to database, log to the standard logger
             logger.error("Failed to write log to database", ex)
@@ -105,10 +214,10 @@ class LoggingService(
 
     suspend fun getLogsAsync(count: Int = 100): List<LogEntity> {
         return try {
-            databaseContext.queryAsync(
+            databaseContext.executeQuery(
                 "SELECT * FROM LogEntity ORDER BY Timestamp DESC LIMIT ?",
-                ::mapCursorToLogEntity,
-                count
+                listOf(count),
+                ::mapCursorToLogEntity
             )
         } catch (ex: Exception) {
             logger.error("Failed to retrieve logs from database", ex)
@@ -118,7 +227,7 @@ class LoggingService(
 
     suspend fun clearLogsAsync() {
         try {
-            val deletedCount = databaseContext.executeAsync("DELETE FROM LogEntity")
+            val deletedCount = databaseContext.executeNonQuery("DELETE FROM LogEntity")
             logger.info("Cleared $deletedCount logs from database")
         } catch (ex: Exception) {
             logger.error("Failed to clear logs from database", ex)
@@ -128,11 +237,10 @@ class LoggingService(
 
     suspend fun getLogsByLevelAsync(level: LogLevel, count: Int = 100): List<LogEntity> {
         return try {
-            databaseContext.queryAsync(
+            databaseContext.executeQuery(
                 "SELECT * FROM LogEntity WHERE Level = ? ORDER BY Timestamp DESC LIMIT ?",
-                ::mapCursorToLogEntity,
-                level.name,
-                count
+                listOf(level.name, count),
+                ::mapCursorToLogEntity
             )
         } catch (ex: Exception) {
             logger.error("Failed to retrieve logs by level from database", ex)
@@ -142,11 +250,10 @@ class LoggingService(
 
     suspend fun getLogsByTagAsync(tag: String, count: Int = 100): List<LogEntity> {
         return try {
-            databaseContext.queryAsync(
+            databaseContext.executeQuery(
                 "SELECT * FROM LogEntity WHERE Tag = ? ORDER BY Timestamp DESC LIMIT ?",
-                ::mapCursorToLogEntity,
-                tag,
-                count
+                listOf(tag, count),
+                ::mapCursorToLogEntity
             )
         } catch (ex: Exception) {
             logger.error("Failed to retrieve logs by tag from database", ex)
@@ -156,11 +263,10 @@ class LoggingService(
 
     suspend fun getLogsByDateRangeAsync(startTime: Instant, endTime: Instant): List<LogEntity> {
         return try {
-            databaseContext.queryAsync(
+            databaseContext.executeQuery(
                 "SELECT * FROM LogEntity WHERE Timestamp BETWEEN ? AND ? ORDER BY Timestamp DESC",
-                ::mapCursorToLogEntity,
-                startTime.toString(),
-                endTime.toString()
+                listOf(startTime.toString(), endTime.toString()),
+                ::mapCursorToLogEntity
             )
         } catch (ex: Exception) {
             logger.error("Failed to retrieve logs by date range from database", ex)
@@ -170,10 +276,10 @@ class LoggingService(
 
     suspend fun deleteOldLogsAsync(olderThan: Instant): Int {
         return try {
-            val deletedCount = databaseContext.executeAsync(
+            val deletedCount = databaseContext.executeNonQuery(
                 "DELETE FROM LogEntity WHERE Timestamp < ?",
-                olderThan.toString()
-            )
+                listOf(olderThan.toString())
+            ).toInt()
             logger.info("Deleted $deletedCount old logs from database")
             deletedCount
         } catch (ex: Exception) {
@@ -184,7 +290,7 @@ class LoggingService(
 
     // Private helper methods
     private fun logMessage(level: LogLevel, message: String, exception: Throwable?, tag: String?) {
-        if (!loggingEnabled || level.ordinal < currentLogLevel.ordinal) {
+        if (!loggingEnabled || level.priority < currentLogLevel.priority) {
             return
         }
 
@@ -195,6 +301,7 @@ class LoggingService(
             LogLevel.INFO -> logger.info(formatLogMessage(message, tag))
             LogLevel.WARNING -> logger.warning(formatLogMessage(message, tag))
             LogLevel.ERROR -> logger.error(formatLogMessage(message, tag), exception)
+            LogLevel.CRITICAL -> logger.error(formatLogMessage(message, tag), exception)
             LogLevel.NONE -> { /* Do nothing */ }
         }
 
@@ -214,21 +321,21 @@ class LoggingService(
         return if (tag != null) "[$tag] $message" else message
     }
 
-    private suspend fun insertLog(entity: LogEntity): Long {
-        return databaseContext.executeAsync(
-            """INSERT INTO LogEntity (Timestamp, Level, Message, Exception, Tag)
-               VALUES (?, ?, ?, ?, ?)""",
-            entity.timestamp.toString(),
-            entity.level,
-            entity.message,
-            entity.exception,
-            entity.tag
-        ).toLong()
+    private fun formatMessage(message: String, args: Array<out Any?>): String {
+        return if (args.isEmpty()) {
+            message
+        } else {
+            try {
+                message.format(*args)
+            } catch (e: Exception) {
+                "$message [Args: ${args.joinToString()}]"
+            }
+        }
     }
 
-    private fun mapCursorToLogEntity(cursor: SqlCursor): LogEntity {
+    private fun mapCursorToLogEntity(cursor: app.cash.sqldelight.db.SqlCursor): LogEntity {
         return LogEntity(
-            id = cursor.getInt(0) ?: 0,
+            id = cursor.getLong(0)?.toInt() ?: 0,
             timestamp = Instant.parse(cursor.getString(1) ?: Clock.System.now().toString()),
             level = cursor.getString(2) ?: "INFO",
             message = cursor.getString(3) ?: "",
@@ -238,69 +345,37 @@ class LoggingService(
     }
 }
 
-// Extension functions for structured logging
-fun ILoggingService.logWithContext(
-    level: LogLevel,
-    message: String,
-    context: Map<String, Any> = emptyMap(),
-    exception: Throwable? = null,
-    tag: String? = null
-) {
-    val contextString = if (context.isNotEmpty()) {
-        " | Context: ${context.entries.joinToString(", ") { "${it.key}=${it.value}" }}"
-    } else ""
+/**
+ * Implementation of TimedOperation
+ */
+private class TimedOperationImpl(
+    override val operationName: String,
+    private val logger: ILoggingService
+) : TimedOperation {
 
-    val fullMessage = "$message$contextString"
+    override val startTime: Instant = Clock.System.now()
 
-    when (level) {
-        LogLevel.VERBOSE -> logVerbose(fullMessage, tag)
-        LogLevel.DEBUG -> logDebug(fullMessage, tag)
-        LogLevel.INFO -> logInfo(fullMessage, tag)
-        LogLevel.WARNING -> logWarning(fullMessage, tag)
-        LogLevel.ERROR -> logError(fullMessage, exception, tag)
-        LogLevel.NONE -> { /* Do nothing */ }
+    override fun complete(success: Boolean, additionalProperties: Map<String, Any?>) {
+        val duration = getCurrentDurationMs()
+        val status = if (success) "SUCCESS" else "FAILURE"
+        val message = "Operation completed: $operationName | Duration: ${duration}ms | Status: $status"
+        logger.logInfo(message, "TIMED_OPERATION")
     }
-}
 
-// Performance tracking extensions
-inline fun <T> ILoggingService.trackOperation(
-    operationName: String,
-    parameters: Map<String, Any>? = null,
-    operation: () -> T
-): T {
-    val startTime = Clock.System.now()
-    logOperationStart(operationName, parameters)
-
-    return try {
-        val result = operation()
-        val duration = Clock.System.now() - startTime
-        logOperationComplete(operationName, duration.inWholeMilliseconds, result.toString())
-        result
-    } catch (exception: Throwable) {
-        val duration = Clock.System.now() - startTime
-        logOperationFailure(operationName, exception, duration.inWholeMilliseconds)
-        throw exception
+    override fun completeWithError(error: Throwable, additionalProperties: Map<String, Any?>) {
+        val duration = getCurrentDurationMs()
+        val message = "Operation failed: $operationName | Duration: ${duration}ms"
+        logger.logError(message, error, "TIMED_OPERATION")
     }
-}
 
-// Suspend version for coroutines
-suspend inline fun <T> ILoggingService.trackOperationSuspend(
-    operationName: String,
-    parameters: Map<String, Any>? = null,
-    operation: suspend () -> T
-): T {
-    val startTime = Clock.System.now()
-    logOperationStart(operationName, parameters)
+    override fun checkpoint(name: String, properties: Map<String, Any?>) {
+        val duration = getCurrentDurationMs()
+        val message = "Operation checkpoint: $operationName | Checkpoint: $name | Duration: ${duration}ms"
+        logger.logDebug(message, "TIMED_OPERATION")
+    }
 
-    return try {
-        val result = operation()
-        val duration = Clock.System.now() - startTime
-        logOperationComplete(operationName, duration.inWholeMilliseconds, result.toString())
-        result
-    } catch (exception: Throwable) {
-        val duration = Clock.System.now() - startTime
-        logOperationFailure(operationName, exception, duration.inWholeMilliseconds)
-        throw exception
+    override fun getCurrentDurationMs(): Long {
+        return (Clock.System.now() - startTime).inWholeMilliseconds
     }
 }
 
@@ -313,4 +388,3 @@ data class LogEntity(
     val exception: String = "",
     val tag: String = ""
 )
-

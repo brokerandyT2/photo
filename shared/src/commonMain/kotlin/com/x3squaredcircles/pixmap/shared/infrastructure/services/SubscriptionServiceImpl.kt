@@ -7,22 +7,19 @@ import com.x3squaredcircles.pixmap.shared.application.interfaces.repositories.IS
 import com.x3squaredcircles.pixmap.shared.application.interfaces.services.ILoggingService
 import com.x3squaredcircles.pixmap.shared.application.interfaces.services.ISubscriptionService
 import com.x3squaredcircles.pixmap.shared.application.interfaces.services.ISubscriptionStoreService
-import com.x3squaredcircles.pixmap.shared.application.mappers.SubscriptionMapper
 import com.x3squaredcircles.pixmap.shared.application.mappers.SubscriptionMapper.toDto
-import com.x3squaredcircles.pixmap.shared.application.mappers.SubscriptionMapper.toPurchaseResponseDto
-import com.x3squaredcircles.pixmap.shared.application.mappers.SubscriptionMapper.toRestoreDto
-import com.x3squaredcircles.pixmap.shared.application.mappers.SubscriptionMapper.toStatsDto
 import com.x3squaredcircles.pixmap.shared.application.mappers.SubscriptionMapper.toSummaryDto
-import com.x3squaredcircles.pixmap.shared.application.mappers.SubscriptionMapper.toVerificationDto
-import com.x3squaredcircles.pixmap.shared.application.mappers.SubscriptionMapper.toBillingHistoryDto
 import com.x3squaredcircles.pixmap.shared.domain.entities.Subscription
 import com.x3squaredcircles.pixmap.shared.domain.entities.SubscriptionStatus
 import com.x3squaredcircles.pixmap.shared.domain.exceptions.SubscriptionDomainException
-import kotlinx.coroutines.delay
 import kotlinx.datetime.Clock
+import kotlinx.datetime.DateTimePeriod
 import kotlinx.datetime.Instant
 import kotlinx.datetime.DateTimeUnit
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.days
+import kotlin.time.DurationUnit
+import kotlin.time.toDuration
 
 /**
  * Implementation of subscription service with business logic and orchestration
@@ -49,42 +46,45 @@ class SubscriptionServiceImpl(
             }
 
             val verification = verificationResult.data!!
-            if (!verification.isValid) {
-                return Result.failure("Invalid purchase: ${verification.errorMessage}")
-            }
 
             // Check for existing subscription
-            val existingResult = subscriptionRepository.getActiveSubscriptionAsync(userId)
-            var previousSubscription: Subscription? = null
-
-            if (existingResult.isSuccess && existingResult.data != null) {
-                previousSubscription = existingResult.data
-                previousSubscription!!.cancel()
-                subscriptionRepository.updateAsync(previousSubscription)
+            val existingSubscriptionResult = subscriptionRepository.getByTransactionIdAsync(transactionId)
+            if (existingSubscriptionResult.isSuccess && existingSubscriptionResult.data != null) {
+                logger.logWarning("Subscription already exists for transaction: $transactionId")
+                return Result.success(
+                    SubscriptionPurchaseResponseDto(
+                        subscription = existingSubscriptionResult.data!!.toDto(),
+                        isNewSubscription = false,
+                        purchaseDate = existingSubscriptionResult.data!!.startDate
+                    )
+                )
             }
 
             // Create new subscription
-            val subscription = Subscription.createFromPurchase(
+            val subscription = Subscription(
                 userId = userId,
                 productId = productId,
                 transactionId = transactionId,
                 purchaseToken = purchaseToken,
-                expirationDate = verification.expirationDate
+                status = SubscriptionStatus.ACTIVE,
+                startDate = Clock.System.now(),
+                expirationDate = verification.expirationDate ?: Clock.System.now().plus(30.days),
+                autoRenewing = verification.autoRenewStatus ?: true
             )
 
-            val saveResult = subscriptionRepository.createAsync(subscription)
-            if (!saveResult.isSuccess) {
-                return Result.failure("Failed to save subscription: ${saveResult.errorMessage}")
+            val createResult = subscriptionRepository.createAsync(subscription)
+            if (!createResult.isSuccess || createResult.data == null) {
+                return Result.failure("Failed to create subscription: ${createResult.errorMessage}")
             }
 
-            logger.logInfo("Successfully processed subscription purchase for user: $userId")
-            val response = SubscriptionPurchaseResponseDto(
-                subscriptionId = saveResult.data!!.id,
-                isSuccess = true,
-                previousSubscriptionId = previousSubscription?.id,
-                message = "Subscription purchased successfully"
+            logger.logInfo("Successfully created subscription: ${createResult.data!!.id}")
+            Result.success(
+                SubscriptionPurchaseResponseDto(
+                    subscription = createResult.data!!.toDto(),
+                    isNewSubscription = true,
+                    purchaseDate = createResult.data!!.startDate
+                )
             )
-            Result.success(response)
 
         } catch (ex: SubscriptionDomainException) {
             logger.logError("Subscription domain error during purchase", ex)
@@ -95,8 +95,13 @@ class SubscriptionServiceImpl(
         }
     }
 
-    override suspend fun verifySubscriptionAsync(subscriptionId: Int): Result<SubscriptionVerificationDto> {
+    override suspend fun verifySubscriptionAsync(
+        subscriptionId: Int,
+        forceRefresh: Boolean
+    ): Result<SubscriptionVerificationDto> {
         return try {
+            logger.logInfo("Verifying subscription: $subscriptionId")
+
             val subscriptionResult = subscriptionRepository.getByIdAsync(subscriptionId)
             if (!subscriptionResult.isSuccess || subscriptionResult.data == null) {
                 throw SubscriptionDomainException.subscriptionNotFound(subscriptionId)
@@ -118,6 +123,7 @@ class SubscriptionServiceImpl(
                 SubscriptionVerificationDto(
                     subscriptionId = subscriptionId,
                     isValid = false,
+                    verificationDate = Clock.System.now(),
                     errorMessage = storeVerificationResult.errorMessage ?: "Store verification failed"
                 )
             }
@@ -139,7 +145,10 @@ class SubscriptionServiceImpl(
         }
     }
 
-    override suspend fun cancelSubscriptionAsync(subscriptionId: Int): Result<Boolean> {
+    override suspend fun cancelSubscriptionAsync(
+        subscriptionId: Int,
+        reason: String?
+    ): Result<Boolean> {
         return try {
             logger.logInfo("Cancelling subscription: $subscriptionId")
 
@@ -155,7 +164,7 @@ class SubscriptionServiceImpl(
                 return Result.success(true)
             }
 
-            subscription.cancel()
+            subscription.updateStatus(SubscriptionStatus.CANCELLED)
 
             val updateResult = subscriptionRepository.updateAsync(subscription)
             if (!updateResult.isSuccess) {
@@ -171,6 +180,79 @@ class SubscriptionServiceImpl(
         } catch (ex: Exception) {
             logger.logError("Unexpected error during subscription cancellation", ex)
             Result.failure("Cancellation failed: ${ex.message}")
+        }
+    }
+
+    override suspend fun restoreSubscriptionsAsync(userId: String): Result<SubscriptionRestoreDto> {
+        return try {
+            logger.logInfo("Restoring subscriptions for user: $userId")
+
+            // Get existing subscriptions
+            val existingResult = subscriptionRepository.getSubscriptionsByUserIdAsync(userId)
+            val existingSubscriptions = if (existingResult.isSuccess) {
+                existingResult.data ?: emptyList()
+            } else {
+                emptyList()
+            }
+
+            // Get purchases from store
+            val storePurchases = storeService.restorePurchasesAsync(userId)
+            if (!storePurchases.isSuccess) {
+                return Result.failure("Failed to get purchases from store: ${storePurchases.errorMessage}")
+            }
+
+            val purchases = storePurchases.data ?: emptyList()
+            var restoredCount = 0
+            val restoredSubscriptions = mutableListOf<Subscription>()
+
+            for (purchase in purchases) {
+                val existingSubscription = existingSubscriptions.find {
+                    it.transactionId == purchase.transactionId || it.purchaseToken == purchase.purchaseToken
+                }
+
+                if (existingSubscription == null) {
+                    // Create new subscription from purchase
+                    val newSubscription = Subscription(
+                        userId = userId,
+                        productId = purchase.productId,
+                        transactionId = purchase.transactionId,
+                        purchaseToken = purchase.purchaseToken,
+                        status = SubscriptionStatus.ACTIVE,
+                        startDate = purchase.purchaseDate,
+                        expirationDate = Clock.System.now().plus(30.days),
+                        autoRenewing = purchase.autoRenewing
+                    )
+
+                    val createResult = subscriptionRepository.createAsync(newSubscription)
+                    if (createResult.isSuccess && createResult.data != null) {
+                        restoredSubscriptions.add(createResult.data!!)
+                        restoredCount++
+                    }
+                } else {
+                    // Update existing subscription if needed
+                    existingSubscription.updateStatus(SubscriptionStatus.ACTIVE)
+                    val updateResult = subscriptionRepository.updateAsync(existingSubscription)
+                    if (updateResult.isSuccess) {
+                        restoredSubscriptions.add(existingSubscription)
+                        restoredCount++
+                    }
+                }
+            }
+
+            Result.success(
+                SubscriptionRestoreDto(
+                    userId = userId,
+                    restoredSubscriptions = restoredSubscriptions.map { it.toDto() },
+                    newSubscriptions = restoredSubscriptions.filter { it.renewalCount == 0 }.map { it.toDto() },
+                    updatedSubscriptions = restoredSubscriptions.filter { it.renewalCount > 0 }.map { it.toDto() },
+                    totalRestored = restoredCount,
+                    restoreDate = Clock.System.now()
+                )
+            )
+
+        } catch (ex: Exception) {
+            logger.logError("Error restoring subscriptions for user: $userId", ex)
+            Result.failure("Failed to restore subscriptions: ${ex.message}")
         }
     }
 
@@ -220,9 +302,7 @@ class SubscriptionServiceImpl(
             }
 
             val subscriptions = result.data ?: emptyList()
-            val summary = subscriptions.toSummaryDto(userId)
-
-            Result.success(summary)
+            Result.success(subscriptions.toSummaryDto(userId))
 
         } catch (ex: Exception) {
             logger.logError("Error getting subscription summary for user: $userId", ex)
@@ -230,93 +310,29 @@ class SubscriptionServiceImpl(
         }
     }
 
-    override suspend fun restoreSubscriptionsAsync(userId: String): Result<SubscriptionRestoreDto> {
-        return try {
-            logger.logInfo("Restoring subscriptions for user: $userId")
-
-            // Get purchases from store
-            val storePurchasesResult = storeService.restorePurchasesAsync(userId)
-            if (!storePurchasesResult.isSuccess) {
-                return Result.failure("Failed to restore from store: ${storePurchasesResult.errorMessage}")
-            }
-
-            val storePurchases = storePurchasesResult.data!!
-            val restoredSubscriptions = mutableListOf<Subscription>()
-            var newCount = 0
-            var updatedCount = 0
-
-            for (purchase in storePurchases) {
-                // Check if subscription already exists
-                val existingResult = subscriptionRepository.getByTransactionIdAsync(purchase.transactionId)
-
-                if (existingResult.isSuccess && existingResult.data != null) {
-                    // Update existing subscription
-                    val existing = existingResult.data!!
-                    existing.updatePurchaseToken(purchase.purchaseToken)
-                    subscriptionRepository.updateAsync(existing)
-                    restoredSubscriptions.add(existing)
-                    updatedCount++
-                } else {
-                    // Create new subscription
-                    val newSubscription = Subscription.createFromRestore(
-                        userId = userId,
-                        productId = purchase.productId,
-                        transactionId = purchase.transactionId,
-                        purchaseToken = purchase.purchaseToken,
-                        expirationDate = Clock.System.now().plus(30.days) // Default 30 days if no expiration
-                    )
-
-                    val saveResult = subscriptionRepository.createAsync(newSubscription)
-                    if (saveResult.isSuccess) {
-                        restoredSubscriptions.add(saveResult.data!!)
-                        newCount++
-                    }
-                }
-            }
-
-            val restoreDto = SubscriptionRestoreDto(
-                userId = userId,
-                restoredCount = restoredSubscriptions.size,
-                newSubscriptions = newCount,
-                updatedSubscriptions = updatedCount,
-                subscriptions = restoredSubscriptions.map { it.toDto() }
-            )
-
-            Result.success(restoreDto)
-
-        } catch (ex: Exception) {
-            logger.logError("Error restoring subscriptions for user: $userId", ex)
-            Result.failure("Failed to restore subscriptions: ${ex.message}")
-        }
-    }
-
     override suspend fun getAvailableProductsAsync(): Result<List<SubscriptionProductDto>> {
         return try {
-            // Get product IDs (this would typically come from configuration)
-            val productIds = listOf("premium_monthly", "premium_yearly", "pro_monthly", "pro_yearly")
-
-            val result = storeService.getProductDetailsAsync(productIds)
-            if (!result.isSuccess) {
-                return Result.failure("Failed to get product details: ${result.errorMessage}")
+            val storeProducts = storeService.getProductDetailsAsync(listOf("premium_monthly", "premium_yearly"))
+            if (!storeProducts.isSuccess) {
+                return Result.failure("Failed to get products from store: ${storeProducts.errorMessage}")
             }
 
-            Result.success(result.data!!)
+            Result.success(storeProducts.data ?: emptyList())
 
         } catch (ex: Exception) {
             logger.logError("Error getting available products", ex)
-            Result.failure("Failed to get available products: ${ex.message}")
+            Result.failure("Failed to get products: ${ex.message}")
         }
     }
 
     override suspend fun hasActiveSubscriptionAsync(userId: String): Result<Boolean> {
         return try {
             val result = subscriptionRepository.getActiveSubscriptionAsync(userId)
-            val hasActive = result.isSuccess && result.data?.isActive() == true
-            Result.success(hasActive)
+            Result.success(result.isSuccess && result.data != null)
 
         } catch (ex: Exception) {
             logger.logError("Error checking active subscription for user: $userId", ex)
-            Result.success(false)
+            Result.failure("Failed to check subscription: ${ex.message}")
         }
     }
 
@@ -328,36 +344,33 @@ class SubscriptionServiceImpl(
         expirationDate: Instant
     ): Result<SubscriptionDto> {
         return try {
-            logger.logInfo("Processing subscription renewal for user: $userId")
+            logger.logInfo("Processing renewal for user: $userId")
 
-            // Find existing subscription
-            val existingResult = subscriptionRepository.getActiveSubscriptionAsync(userId)
-            if (!existingResult.isSuccess || existingResult.data == null) {
-                throw SubscriptionDomainException.subscriptionNotFound("active subscription for user")
+            val activeResult = subscriptionRepository.getActiveSubscriptionAsync(userId)
+            if (!activeResult.isSuccess || activeResult.data == null) {
+                throw SubscriptionDomainException.subscriptionNotFound(0)
             }
 
-            val subscription = existingResult.data!!
+            val subscription = activeResult.data!!
             subscription.renew(expirationDate, transactionId)
-            subscription.updatePurchaseToken(purchaseToken)
 
             val updateResult = subscriptionRepository.updateAsync(subscription)
-            if (!updateResult.isSuccess) {
-                throw SubscriptionDomainException.renewalFailed(subscription.id, null)
+            if (!updateResult.isSuccess || updateResult.data == null) {
+                throw SubscriptionDomainException.databaseError("Failed to update subscription", null)
             }
 
-            logger.logInfo("Successfully renewed subscription: ${subscription.id}")
-            Result.success(subscription.toDto())
+            Result.success(updateResult.data!!.toDto())
 
-        } catch (ex: SubscriptionDomainException) {
-            logger.logError("Subscription domain error during renewal", ex)
-            Result.failure(ex.getUserFriendlyMessage())
         } catch (ex: Exception) {
-            logger.logError("Unexpected error during subscription renewal", ex)
-            Result.failure("Renewal failed: ${ex.message}")
+            logger.logError("Error processing renewal for user: $userId", ex)
+            Result.failure("Failed to process renewal: ${ex.message}")
         }
     }
 
-    override suspend fun updateExpirationDateAsync(subscriptionId: Int, newExpirationDate: Instant): Result<SubscriptionDto> {
+    override suspend fun updateExpirationDateAsync(
+        subscriptionId: Int,
+        newExpirationDate: Instant
+    ): Result<SubscriptionDto> {
         return try {
             val subscriptionResult = subscriptionRepository.getByIdAsync(subscriptionId)
             if (!subscriptionResult.isSuccess || subscriptionResult.data == null) {
@@ -368,18 +381,15 @@ class SubscriptionServiceImpl(
             subscription.updateExpirationDate(newExpirationDate)
 
             val updateResult = subscriptionRepository.updateAsync(subscription)
-            if (!updateResult.isSuccess) {
+            if (!updateResult.isSuccess || updateResult.data == null) {
                 throw SubscriptionDomainException.databaseError("Failed to update expiration date", null)
             }
 
-            Result.success(subscription.toDto())
+            Result.success(updateResult.data!!.toDto())
 
-        } catch (ex: SubscriptionDomainException) {
-            logger.logError("Subscription domain error during expiration update", ex)
-            Result.failure(ex.getUserFriendlyMessage())
         } catch (ex: Exception) {
-            logger.logError("Unexpected error during expiration update", ex)
-            Result.failure("Update failed: ${ex.message}")
+            logger.logError("Error updating expiration date for subscription: $subscriptionId", ex)
+            Result.failure("Failed to update expiration date: ${ex.message}")
         }
     }
 
@@ -392,21 +402,15 @@ class SubscriptionServiceImpl(
 
             val subscription = subscriptionResult.data!!
 
-            // Get billing history from store
-            val historyResult = storeService.getPurchaseHistoryAsync(subscription.userId)
-            val billingEvents = if (historyResult.isSuccess && historyResult.data != null) {
-                historyResult.data!!
-            } else {
-                emptyList()
-            }
-
-            val billingHistory = billingEvents.toBillingHistoryDto(
-                subscriptionId,
-                subscription.userId,
-                subscription.productId
+            // For now, return empty billing history - this would be expanded with actual billing events
+            Result.success(
+                SubscriptionBillingHistoryDto(
+                    subscriptionId = subscriptionId,
+                    userId = subscription.userId,
+                    productId = subscription.productId,
+                    billingEvents = emptyList()
+                )
             )
-
-            Result.success(billingHistory)
 
         } catch (ex: Exception) {
             logger.logError("Error getting billing history for subscription: $subscriptionId", ex)
@@ -420,34 +424,42 @@ class SubscriptionServiceImpl(
         endDate: Instant?
     ): Result<SubscriptionStatsDto> {
         return try {
-            // For now, get all subscriptions and filter (in production, this would be done at DB level)
-            val allSubscriptions = if (userId != null) {
-                val result = subscriptionRepository.getSubscriptionsByUserIdAsync(userId)
-                result.data ?: emptyList()
-            } else {
-                // Would need a method to get all subscriptions in the repository
-                emptyList<Subscription>()
-            }
-
-            val stats = allSubscriptions.toStatsDto()
-            Result.success(stats)
+            // Implementation would filter by date range and user if provided
+            // For now, return basic stats
+            Result.success(
+                SubscriptionStatsDto(
+                    totalActiveSubscriptions = 0,
+                    totalExpiredSubscriptions = 0,
+                    totalCancelledSubscriptions = 0,
+                    totalRenewals = 0,
+                    subscriptionsByProduct = emptyMap(),
+                    subscriptionsByStatus = emptyMap(),
+                    averageSubscriptionDuration = 0.0,
+                    churnRate = 0.0,
+                    renewalRate = 0.0
+                )
+            )
 
         } catch (ex: Exception) {
             logger.logError("Error getting subscription stats", ex)
-            Result.failure("Failed to get subscription stats: ${ex.message}")
+            Result.failure("Failed to get stats: ${ex.message}")
         }
     }
 
     override suspend fun validateWithStoreAsync(subscription: Subscription): Result<Boolean> {
         return try {
-            val result = storeService.verifyPurchaseAsync(
+            val verificationResult = storeService.verifyPurchaseAsync(
                 subscription.productId,
                 subscription.purchaseToken,
                 subscription.transactionId
             )
 
-            if (result.isSuccess && result.data != null) {
-                val verification = result.data!!
+            if (verificationResult.isSuccess && verificationResult.data != null) {
+                val verification = verificationResult.data!!
+                if (!verification.isValid) {
+                    subscription.updateStatus(SubscriptionStatus.EXPIRED)
+                    subscriptionRepository.updateAsync(subscription)
+                }
                 Result.success(verification.isValid)
             } else {
                 Result.success(false)
@@ -455,7 +467,7 @@ class SubscriptionServiceImpl(
 
         } catch (ex: Exception) {
             logger.logError("Error validating subscription with store", ex)
-            Result.success(false)
+            Result.failure("Validation failed: ${ex.message}")
         }
     }
 
@@ -471,7 +483,7 @@ class SubscriptionServiceImpl(
 
         } catch (ex: Exception) {
             logger.logError("Error getting subscriptions needing verification", ex)
-            Result.failure("Failed to get subscriptions needing verification: ${ex.message}")
+            Result.failure("Failed to get subscriptions: ${ex.message}")
         }
     }
 
@@ -483,17 +495,13 @@ class SubscriptionServiceImpl(
             }
 
             val subscriptions = result.data ?: emptyList()
-            val filteredSubscriptions = if (includeGracePeriod) {
-                subscriptions.filter { subscription ->
-                    // Include subscriptions within grace period (7 days after expiration)
-                    val gracePeriodEnd = subscription.expirationDate.plus(7.days)
-                    Clock.System.now() <= gracePeriodEnd
-                }
-            } else {
+            val filtered = if (includeGracePeriod) {
                 subscriptions
+            } else {
+                subscriptions.filter { !it.isInGracePeriod() }
             }
 
-            Result.success(filteredSubscriptions.map { it.toDto() })
+            Result.success(filtered.map { it.toDto() })
 
         } catch (ex: Exception) {
             logger.logError("Error getting expired subscriptions", ex)
@@ -501,82 +509,231 @@ class SubscriptionServiceImpl(
         }
     }
 
-    override suspend fun syncSubscriptionsAsync(userId: String): Result<List<SubscriptionDto>> {
+    override suspend fun processExpiredSubscriptionsAsync(): Result<Int> {
         return try {
-            logger.logInfo("Syncing subscriptions for user: $userId")
-
-            // Get current subscriptions from database
-            val currentSubscriptionsResult = subscriptionRepository.getSubscriptionsByUserIdAsync(userId)
-            val currentSubscriptions = currentSubscriptionsResult.data ?: emptyList()
-
-            // Get active purchases from store
-            val storePurchasesResult = storeService.getActivePurchasesAsync(userId)
-            if (!storePurchasesResult.isSuccess) {
-                return Result.failure("Failed to get store purchases: ${storePurchasesResult.errorMessage}")
+            val expiredResult = getExpiredSubscriptionsAsync(false)
+            if (!expiredResult.isSuccess) {
+                return Result.failure("Failed to get expired subscriptions: ${expiredResult.errorMessage}")
             }
 
-            val storePurchases = storePurchasesResult.data!!
-            val syncedSubscriptions = mutableListOf<Subscription>()
+            val expiredSubscriptions = expiredResult.data ?: emptyList()
+            var processedCount = 0
 
-            // Process each store purchase
-            for (purchase in storePurchases) {
-                val existingSubscription = currentSubscriptions.find {
-                    it.transactionId == purchase.transactionId
+            for (subscriptionDto in expiredSubscriptions) {
+                val subscriptionResult = subscriptionRepository.getByIdAsync(subscriptionDto.id)
+                if (subscriptionResult.isSuccess && subscriptionResult.data != null) {
+                    val subscription = subscriptionResult.data!!
+                    subscription.updateStatus(SubscriptionStatus.EXPIRED)
+                    subscriptionRepository.updateAsync(subscription)
+                    processedCount++
                 }
+            }
 
-                if (existingSubscription != null) {
+            Result.success(processedCount)
+
+        } catch (ex: Exception) {
+            logger.logError("Error processing expired subscriptions", ex)
+            Result.failure("Failed to process expired subscriptions: ${ex.message}")
+        }
+    }
+
+    override suspend fun updatePurchaseTokenAsync(
+        subscriptionId: Int,
+        newPurchaseToken: String
+    ): Result<SubscriptionDto> {
+        return try {
+            val subscriptionResult = subscriptionRepository.getByIdAsync(subscriptionId)
+            if (!subscriptionResult.isSuccess || subscriptionResult.data == null) {
+                throw SubscriptionDomainException.subscriptionNotFound(subscriptionId)
+            }
+
+            val subscription = subscriptionResult.data!!
+            subscription.updatePurchaseToken(newPurchaseToken)
+
+            val updateResult = subscriptionRepository.updateAsync(subscription)
+            if (!updateResult.isSuccess || updateResult.data == null) {
+                throw SubscriptionDomainException.databaseError("Failed to update purchase token", null)
+            }
+
+            Result.success(updateResult.data!!.toDto())
+
+        } catch (ex: Exception) {
+            logger.logError("Error updating purchase token for subscription: $subscriptionId", ex)
+            Result.failure("Failed to update purchase token: ${ex.message}")
+        }
+    }
+
+    override suspend fun checkEntitlementsAsync(userId: String): Result<Map<String, Boolean>> {
+        return try {
+            val activeResult = getActiveSubscriptionAsync(userId)
+            if (!activeResult.isSuccess) {
+                return Result.success(emptyMap())
+            }
+
+            val hasActiveSubscription = activeResult.data != null
+            val entitlements = mapOf(
+                "premium_features" to hasActiveSubscription,
+                "ad_free" to hasActiveSubscription,
+                "unlimited_storage" to hasActiveSubscription
+            )
+
+            Result.success(entitlements)
+
+        } catch (ex: Exception) {
+            logger.logError("Error checking entitlements for user: $userId", ex)
+            Result.failure("Failed to check entitlements: ${ex.message}")
+        }
+    }
+
+    override suspend fun getByTransactionIdAsync(transactionId: String): Result<SubscriptionDto?> {
+        return try {
+            val result = subscriptionRepository.getByTransactionIdAsync(transactionId)
+            if (!result.isSuccess) {
+                return Result.success(null)
+            }
+
+            Result.success(result.data?.toDto())
+
+        } catch (ex: Exception) {
+            logger.logError("Error getting subscription by transaction ID: $transactionId", ex)
+            Result.failure("Failed to get subscription: ${ex.message}")
+        }
+    }
+
+    override suspend fun getByPurchaseTokenAsync(purchaseToken: String): Result<SubscriptionDto?> {
+        return try {
+            val result = subscriptionRepository.getByPurchaseTokenAsync(purchaseToken)
+            if (!result.isSuccess) {
+                return Result.success(null)
+            }
+
+            Result.success(result.data?.toDto())
+
+        } catch (ex: Exception) {
+            logger.logError("Error getting subscription by purchase token", ex)
+            Result.failure("Failed to get subscription: ${ex.message}")
+        }
+    }
+
+    override suspend fun handleGracePeriodAsync(subscriptionId: Int): Result<SubscriptionDto> {
+        return try {
+            val subscriptionResult = subscriptionRepository.getByIdAsync(subscriptionId)
+            if (!subscriptionResult.isSuccess || subscriptionResult.data == null) {
+                throw SubscriptionDomainException.subscriptionNotFound(subscriptionId)
+            }
+
+            val subscription = subscriptionResult.data!!
+            subscription.updateStatus(SubscriptionStatus.GRACE_PERIOD)
+
+            val updateResult = subscriptionRepository.updateAsync(subscription)
+            if (!updateResult.isSuccess || updateResult.data == null) {
+                throw SubscriptionDomainException.databaseError("Failed to enter grace period", null)
+            }
+
+            Result.success(updateResult.data!!.toDto())
+
+        } catch (ex: Exception) {
+            logger.logError("Error handling grace period for subscription: $subscriptionId", ex)
+            Result.failure("Failed to handle grace period: ${ex.message}")
+        }
+    }
+
+    override suspend fun processStateChangeAsync(
+        subscriptionId: Int,
+        newState: String,
+        metadata: Map<String, Any>
+    ): Result<SubscriptionDto> {
+        return try {
+            val subscriptionResult = subscriptionRepository.getByIdAsync(subscriptionId)
+            if (!subscriptionResult.isSuccess || subscriptionResult.data == null) {
+                throw SubscriptionDomainException.subscriptionNotFound(subscriptionId)
+            }
+
+            val subscription = subscriptionResult.data!!
+            val status = SubscriptionStatus.valueOf(newState.uppercase())
+            subscription.updateStatus(status)
+
+            val updateResult = subscriptionRepository.updateAsync(subscription)
+            if (!updateResult.isSuccess || updateResult.data == null) {
+                throw SubscriptionDomainException.databaseError("Failed to process state change", null)
+            }
+
+            Result.success(updateResult.data!!.toDto())
+
+        } catch (ex: Exception) {
+            logger.logError("Error processing state change for subscription: $subscriptionId", ex)
+            Result.failure("Failed to process state change: ${ex.message}")
+        }
+    }
+
+    override suspend fun synchronizeWithStoreAsync(userId: String): Result<List<SubscriptionDto>> {
+        return try {
+            logger.logInfo("Synchronizing subscriptions with store for user: $userId")
+
+            val storePurchases = storeService.restorePurchasesAsync(userId)
+            if (!storePurchases.isSuccess) {
+                return Result.failure("Failed to get purchases from store: ${storePurchases.errorMessage}")
+            }
+
+            val purchases = storePurchases.data ?: emptyList()
+            val synchronizedSubscriptions = mutableListOf<Subscription>()
+
+            for (purchase in purchases) {
+                val existingResult = subscriptionRepository.getByTransactionIdAsync(purchase.transactionId)
+
+                if (existingResult.isSuccess && existingResult.data != null) {
                     // Update existing subscription
-                    existingSubscription.updatePurchaseToken(purchase.purchaseToken)
-                    subscriptionRepository.updateAsync(existingSubscription)
-                    syncedSubscriptions.add(existingSubscription)
+                    val existing = existingResult.data!!
+                    existing.updateStatus(SubscriptionStatus.ACTIVE)
+                    existing.updateExpirationDate(Clock.System.now().plus(30.days))
+
+                    val updateResult = subscriptionRepository.updateAsync(existing)
+                    if (updateResult.isSuccess && updateResult.data != null) {
+                        synchronizedSubscriptions.add(updateResult.data!!)
+                    }
                 } else {
-                    // Create new subscription from store purchase
-                    val newSubscription = Subscription.createFromPurchase(
+                    // Create new subscription
+                    // Get the current Instant
+                    val now: Instant = Clock.System.now()
+
+// Create a DateTimePeriod representing 30 days
+
+                    val thirtyDaysFromNow: Instant = now.plus(30.days)
+
+                    val newSubscription = Subscription(
                         userId = userId,
                         productId = purchase.productId,
                         transactionId = purchase.transactionId,
                         purchaseToken = purchase.purchaseToken,
-                        expirationDate = purchase.expirationDate
+                        status = SubscriptionStatus.ACTIVE,
+                        startDate = purchase.purchaseDate,
+                        expirationDate = thirtyDaysFromNow,
+                        autoRenewing = purchase.autoRenewing
                     )
 
-                    val saveResult = subscriptionRepository.createAsync(newSubscription)
-                    if (saveResult.isSuccess) {
-                        syncedSubscriptions.add(saveResult.data!!)
+                    val createResult = subscriptionRepository.createAsync(newSubscription)
+                    if (createResult.isSuccess && createResult.data != null) {
+                        synchronizedSubscriptions.add(createResult.data!!)
                     }
                 }
             }
 
-            Result.success(syncedSubscriptions.map { it.toDto() })
+            Result.success(synchronizedSubscriptions.map { it.toDto() })
 
         } catch (ex: Exception) {
-            logger.logError("Error syncing subscriptions for user: $userId", ex)
-            Result.failure("Failed to sync subscriptions: ${ex.message}")
+            logger.logError("Error synchronizing subscriptions for user: $userId", ex)
+            Result.failure("Failed to synchronize subscriptions: ${ex.message}")
         }
     }
 
-    override suspend fun validateSubscriptionStatusAsync(subscriptionId: Int): Result<Boolean> {
+    override suspend fun getProductDetailsFromStoreAsync(productIds: List<String>): Result<List<SubscriptionProductDto>> {
         return try {
-            val subscriptionResult = subscriptionRepository.getByIdAsync(subscriptionId)
-            if (!subscriptionResult.isSuccess || subscriptionResult.data == null) {
-                return Result.success(false)
-            }
-
-            val subscription = subscriptionResult.data!!
-
-            // Check if subscription is expired
-            val isExpired = subscription.expirationDate < Clock.System.now()
-            if (isExpired && subscription.status == SubscriptionStatus.ACTIVE) {
-                // Mark as expired
-                subscription.expire()
-                subscriptionRepository.updateAsync(subscription)
-                return Result.success(false)
-            }
-
-            Result.success(subscription.isActive())
+            val result = storeService.getProductDetailsAsync(productIds)
+            Result.success(result.data ?: emptyList())
 
         } catch (ex: Exception) {
-            logger.logError("Error validating subscription status: $subscriptionId", ex)
-            Result.success(false)
+            logger.logError("Error getting product details from store", ex)
+            Result.failure("Failed to get product details: ${ex.message}")
         }
     }
 }
