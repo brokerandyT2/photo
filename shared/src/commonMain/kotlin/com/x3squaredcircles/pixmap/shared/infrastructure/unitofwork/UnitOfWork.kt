@@ -3,10 +3,10 @@ package com.x3squaredcircles.pixmap.shared.infrastructure.unitofwork
 
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IUnitOfWork
 import com.x3squaredcircles.pixmap.shared.application.interfaces.repositories.*
+import com.x3squaredcircles.pixmap.shared.application.interfaces.services.ILoggingService
 import com.x3squaredcircles.pixmap.shared.infrastructure.data.IDatabaseContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.logging.Logger
 
 /**
  * Unit of Work pattern implementation for managing database transactions
@@ -14,7 +14,7 @@ import kotlinx.coroutines.logging.Logger
  */
 class UnitOfWork(
     private val context: IDatabaseContext,
-    private val logger: Logger,
+    private val logging: ILoggingService,
     override val locations: ILocationRepository,
     override val weather: IWeatherRepository,
     override val tips: ITipRepository,
@@ -34,10 +34,10 @@ class UnitOfWork(
         return transactionMutex.withLock {
             try {
                 val changeCount = context.saveChangesAsync()
-                logger.debug("Saved $changeCount changes to database")
+                logging.debug("Saved $changeCount changes to database")
                 changeCount
             } catch (e: Exception) {
-                logger.error("Failed to save changes", e)
+                logging.error("Failed to save changes", e)
                 throw UnitOfWorkException("Failed to save changes: ${e.message}", e)
             }
         }
@@ -53,14 +53,13 @@ class UnitOfWork(
                     context.beginTransactionAsync()
                     isInTransaction = true
                     transactionNestingLevel = 1
-                    logger.debug("Started new database transaction")
+                    logging.debug("Started new transaction")
                 } else {
-                    // Support nested transactions by incrementing level
                     transactionNestingLevel++
-                    logger.debug("Incremented transaction nesting level to $transactionNestingLevel")
+                    logging.debug("Nested transaction started (level: $transactionNestingLevel)")
                 }
             } catch (e: Exception) {
-                logger.error("Failed to begin transaction", e)
+                logging.error("Failed to begin transaction", e)
                 throw UnitOfWorkException("Failed to begin transaction: ${e.message}", e)
             }
         }
@@ -74,23 +73,19 @@ class UnitOfWork(
             try {
                 if (isInTransaction) {
                     transactionNestingLevel--
-
                     if (transactionNestingLevel <= 0) {
                         context.commitAsync()
                         isInTransaction = false
                         transactionNestingLevel = 0
-                        logger.debug("Committed database transaction")
+                        logging.debug("Transaction committed")
                     } else {
-                        logger.debug("Decremented transaction nesting level to $transactionNestingLevel")
+                        logging.debug("Nested transaction committed (level: $transactionNestingLevel)")
                     }
                 } else {
-                    logger.warning("Attempted to commit transaction when none is active")
+                    logging.warning("Attempted to commit transaction when none is active")
                 }
             } catch (e: Exception) {
-                logger.error("Failed to commit transaction", e)
-                // Reset transaction state on error
-                isInTransaction = false
-                transactionNestingLevel = 0
+                logging.error("Failed to commit transaction", e)
                 throw UnitOfWorkException("Failed to commit transaction: ${e.message}", e)
             }
         }
@@ -106,15 +101,12 @@ class UnitOfWork(
                     context.rollbackAsync()
                     isInTransaction = false
                     transactionNestingLevel = 0
-                    logger.debug("Rolled back database transaction")
+                    logging.debug("Transaction rolled back")
                 } else {
-                    logger.warning("Attempted to rollback transaction when none is active")
+                    logging.warning("Attempted to rollback transaction when none is active")
                 }
             } catch (e: Exception) {
-                logger.error("Failed to rollback transaction", e)
-                // Reset transaction state regardless
-                isInTransaction = false
-                transactionNestingLevel = 0
+                logging.error("Failed to rollback transaction", e)
                 throw UnitOfWorkException("Failed to rollback transaction: ${e.message}", e)
             }
         }
@@ -123,156 +115,87 @@ class UnitOfWork(
     /**
      * Executes a block of code within a transaction
      */
-    suspend fun <T> executeInTransactionAsync(block: suspend () -> T): T {
-        beginTransactionAsync()
-        return try {
-            val result = block()
-            commitAsync()
-            result
-        } catch (e: Exception) {
+    suspend fun <T> withTransactionAsync(block: suspend () -> T): T {
+        return transactionMutex.withLock {
+            val wasInTransaction = isInTransaction
+
             try {
-                rollbackAsync()
-            } catch (rollbackException: Exception) {
-                logger.error("Failed to rollback after error", rollbackException)
-                // Add rollback exception as suppressed
-                e.addSuppressed(rollbackException)
+                if (!wasInTransaction) {
+                    beginTransactionAsync()
+                }
+
+                val result = block()
+
+                if (!wasInTransaction) {
+                    commitAsync()
+                }
+
+                result
+            } catch (e: Exception) {
+                if (!wasInTransaction && isInTransaction) {
+                    try {
+                        rollbackAsync()
+                    } catch (rollbackException: Exception) {
+                        logging.error("Failed to rollback transaction after error", rollbackException)
+                    }
+                }
+                throw e
             }
-            throw e
         }
     }
 
     /**
-     * Executes a block of code within a transaction and saves changes
+     * Checks if currently in a transaction
      */
-    suspend fun <T> executeWithSaveAsync(block: suspend () -> T): T {
-        return executeInTransactionAsync {
-            val result = block()
-            saveChangesAsync()
-            result
-        }
-    }
+    fun isInTransaction(): Boolean = isInTransaction
 
     /**
-     * Gets transaction status information
+     * Checks if there are pending changes
      */
-    fun getTransactionStatus(): TransactionStatus {
-        return TransactionStatus(
-            isInTransaction = isInTransaction,
-            nestingLevel = transactionNestingLevel
-        )
-    }
-
-    /**
-     * Checks if there are any pending changes
-     */
-    suspend fun hasPendingChanges(): Boolean {
+    suspend fun hasPendingChangesAsync(): Boolean {
         return try {
             context.hasPendingChangesAsync()
         } catch (e: Exception) {
-            logger.error("Failed to check for pending changes", e)
+            logging.error("Failed to check pending changes", e)
             false
         }
     }
 
     /**
-     * Discards all pending changes without saving
+     * Discards all pending changes
      */
-    suspend fun discardChanges() {
+    suspend fun discardChangesAsync() {
         try {
             context.discardChangesAsync()
-            logger.debug("Discarded all pending changes")
+            logging.debug("Discarded pending changes")
         } catch (e: Exception) {
-            logger.error("Failed to discard changes", e)
+            logging.error("Failed to discard changes", e)
             throw UnitOfWorkException("Failed to discard changes: ${e.message}", e)
         }
     }
 
     /**
-     * Gets database context for advanced operations
+     * Disposes the unit of work and cleans up resources
      */
-    fun getDatabaseContext(): IDatabaseContext = context
+    fun dispose() {
+        try {
+            if (isInTransaction) {
+                logging.debug("Disposing unit of work with active transaction - rolling back")
+                // Note: This is a blocking call, consider making dispose suspend if needed
+                // For now, we'll just log and reset the state
+                isInTransaction = false
+                transactionNestingLevel = 0
+            }
+        } catch (e: Exception) {
+            logging.error("Error during unit of work disposal", e)
+        }
+    }
 }
 
 /**
- * Transaction status information
- */
-data class TransactionStatus(
-    val isInTransaction: Boolean,
-    val nestingLevel: Int
-) {
-    val isNestedTransaction: Boolean
-        get() = nestingLevel > 1
-}
-
-/**
- * Exception thrown by UnitOfWork operations
+ * Exception thrown when unit of work operations fail
  */
 class UnitOfWorkException(
     message: String,
     cause: Throwable? = null
 ) : Exception(message, cause)
-
-/**
- * Extension functions for common UnitOfWork patterns
- */
-suspend inline fun <T> IUnitOfWork.withTransaction(crossinline block: suspend () -> T): T {
-    if (this is UnitOfWork) {
-        return executeInTransactionAsync { block() }
-    } else {
-        // Fallback implementation for other UnitOfWork implementations
-        beginTransactionAsync()
-        return try {
-            val result = block()
-            commitAsync()
-            result
-        } catch (e: Exception) {
-            rollbackAsync()
-            throw e
-        }
-    }
-}
-
-suspend inline fun <T> IUnitOfWork.withSave(crossinline block: suspend () -> T): T {
-    val result = block()
-    saveChangesAsync()
-    return result
-}
-
-suspend inline fun <T> IUnitOfWork.withTransactionAndSave(crossinline block: suspend () -> T): T {
-    return withTransaction {
-        val result = block()
-        saveChangesAsync()
-        result
-    }
-}
-
-/**
- * Batch operation support
- */
-suspend fun <T> IUnitOfWork.batchOperation(
-    items: List<T>,
-    batchSize: Int = 100,
-    operation: suspend (List<T>) -> Unit
-) {
-    withTransaction {
-        items.chunked(batchSize).forEach { batch ->
-            operation(batch)
-        }
-        saveChangesAsync()
-    }
-}
-
-/**
- * Safe operation with automatic rollback on exception
- */
-suspend inline fun <T> IUnitOfWork.safely(crossinline operation: suspend () -> T): Result<T> {
-    return try {
-        withTransaction {
-            val result = operation()
-            saveChangesAsync()
-            result
-        }.let { Result.success(it) }
-    } catch (e: Exception) {
-        Result.failure(e)
-    }
-}

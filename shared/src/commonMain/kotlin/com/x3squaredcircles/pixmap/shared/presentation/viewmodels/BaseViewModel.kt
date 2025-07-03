@@ -3,10 +3,12 @@ package com.x3squaredcircles.pixmap.shared.presentation.viewmodels
 
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IEventBus
 import com.x3squaredcircles.pixmap.shared.application.interfaces.services.IErrorDisplayService
+import com.x3squaredcircles.pixmap.shared.application.interfaces.services.ErrorDisplayEventArgs
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import java.lang.ref.WeakReference
 
@@ -31,7 +33,7 @@ abstract class BaseViewModel(
 
     // Command tracking with weak references to prevent memory leaks
     private var lastCommandRef: WeakReference<suspend () -> Unit>? = null
-    private var lastCommandParameter: Any? = null
+    private var _lastCommandParameter: Any? = null
 
     // Error subscription management
     private val errorSubscriptionLock = Any()
@@ -50,11 +52,11 @@ abstract class BaseViewModel(
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     // Cached command for retry capability
-    val lastCommand: suspend () -> Unit?
+    val lastCommand: (suspend () -> Unit)?
         get() = lastCommandRef?.get()
 
     val lastCommandParameter: Any?
-        get() = this.lastCommandParameter
+        get() = _lastCommandParameter
 
     // Event for system errors (MediatR failures)
     private val _errorOccurred = MutableSharedFlow<OperationErrorEvent>()
@@ -83,7 +85,7 @@ abstract class BaseViewModel(
         if (_isDisposed.get()) return
 
         lastCommandRef = WeakReference(command)
-        lastCommandParameter = parameter
+        _lastCommandParameter = parameter
     }
 
     /**
@@ -217,7 +219,7 @@ abstract class BaseViewModel(
 
         // Clear weak references
         lastCommandRef = null
-        lastCommandParameter = null
+        _lastCommandParameter = null
 
         // Cancel coroutine scope
         viewModelScope.cancel()
@@ -229,12 +231,13 @@ abstract class BaseViewModel(
  */
 internal object OperationErrorEventPool {
     private val pool = ConcurrentLinkedQueue<OperationErrorEvent>()
-    private val poolCount = AtomicReference(0)
+    private val poolCount = AtomicInteger(0)
     private const val MAX_POOL_SIZE = 10
 
     fun get(message: String): OperationErrorEvent {
         return pool.poll()?.apply {
             updateMessage(message)
+            poolCount.decrementAndGet()
         } ?: OperationErrorEvent(message)
     }
 
@@ -259,12 +262,3 @@ data class OperationErrorEvent(
         this._message = message
     }
 }
-
-/**
- * Error display event arguments for cross-platform compatibility
- */
-data class ErrorDisplayEventArgs(
-    val errors: List<Any>, // Using Any to avoid complex domain event dependencies
-    val displayMessage: String,
-    val isSingleError: Boolean = errors.size == 1
-)
