@@ -2,8 +2,7 @@
 package com.x3squaredcircles.pixmap.shared.application.commands
 
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IValidator
-import com.x3squaredcircles.pixmap.shared.application.models.ValidationResult
-import com.x3squaredcircles.pixmap.shared.application.resources.AppResources
+import com.x3squaredcircles.pixmap.shared.application.common.models.ValidationResult
 
 /**
  * Validates the properties of a [SaveLocationCommand] to ensure they meet the required constraints.
@@ -34,34 +33,34 @@ class SaveLocationCommandValidator : IValidator<SaveLocationCommand> {
 
         // Validate Title
         if (command.title.isBlank()) {
-            errors.add(AppResources.locationValidationErrorTitleRequired)
+            errors.add("Title is required")
         } else if (command.title.length > 100) {
-            errors.add(AppResources.locationValidationErrorTitleMaxLength)
+            errors.add("Title cannot exceed 100 characters")
         }
 
         // Validate Description
         if (command.description.length > 500) {
-            errors.add(AppResources.locationValidationErrorDescriptionMaxLength)
+            errors.add("Description cannot exceed 500 characters")
         }
 
         // Validate Latitude
         if (command.latitude !in -90.0..90.0) {
-            errors.add(AppResources.locationValidationErrorLatitudeRange)
+            errors.add("Latitude must be between -90 and 90 degrees")
         }
 
         // Validate Longitude
         if (command.longitude !in -180.0..180.0) {
-            errors.add(AppResources.locationValidationErrorLongitudeRange)
+            errors.add("Longitude must be between -180 and 180 degrees")
         }
 
         // Null Island validation (0,0 coordinates)
         if (command.latitude == 0.0 && command.longitude == 0.0) {
-            errors.add(AppResources.locationValidationErrorNullIslandCoordinates)
+            errors.add("Coordinates cannot represent Null Island (0,0)")
         }
 
         // Validate PhotoPath (if provided)
         if (!command.photoPath.isNullOrBlank() && !isValidPath(command.photoPath)) {
-            errors.add(AppResources.locationValidationErrorPhotoPathInvalid)
+            errors.add("Photo path contains invalid characters")
         }
 
         return if (errors.isEmpty()) {

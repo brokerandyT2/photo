@@ -152,11 +152,14 @@ enum class WeatherErrorType {
 /**
  * Tip validation error event
  */
+/**
+ * Tip validation error event
+ */
 class TipValidationErrorEvent(
     val tipId: Int,
     val validationMessage: String,
     source: String = "TipCommandHandler"
-) : DomainErrorEvent(source) {
+) : DomainErrorEvent(source), INotification {
 
     override val message: String
         get() = "Tip validation error for tip $tipId: $validationMessage"
@@ -179,7 +182,7 @@ class TipTypeErrorEvent(
     val errorType: TipTypeErrorType,
     val additionalContext: String? = null,
     source: String = "TipTypeCommandHandler"
-) : DomainErrorEvent(source) {
+) : DomainErrorEvent(source), INotification {
 
     override val message: String
         get() = "Tip type error: ${errorType.name} for '$tipTypeName'"

@@ -16,9 +16,9 @@ import com.x3squaredcircles.pixmap.shared.domain.exceptions.TipDomainException
 class CreateTipCommandHandler(
     private val tipRepository: ITipRepository,
     private val mediator: IMediator
-) : IRequestHandler<CreateTipCommand, List<TipDto>> {
+) : IRequestHandler<CreateTipCommand, Tip> {
 
-    override suspend fun handle(request: CreateTipCommand): List<TipDto> {
+    override suspend fun handle(request: CreateTipCommand): Tip {
         try {
             val tip = Tip(
                 tipTypeId = request.tipTypeId,
@@ -35,73 +35,54 @@ class CreateTipCommandHandler(
                 )
             }
 
-            if (!request.i8n.isNullOrBlank()) {
-                tip.setLocalization(request.i8n)
-            }
-
             val result = tipRepository.createAsync(tip)
 
             if (!result.isSuccess) {
-                mediator.publish(
-                    TipValidationErrorEvent(
-                        tipId = null,
-                        tipTypeId = request.tipTypeId,
-                        errors = listOf("Database error: ${result.exceptionOrNull()?.message}"),
-                        source = "CreateTipCommandHandler"
-                    )
+                val errorEvent = TipValidationErrorEvent(
+                    tipId = 0,
+                    validationMessage = "Database error: ${result.data?.toString()}"
                 )
-                throw RuntimeException("Failed to create tip: ${result.exceptionOrNull()?.message}")
+                mediator.publish(errorEvent)
+                throw RuntimeException("Failed to create tip: ${result.data?.toString()}")
             }
 
-            val createdTip = result.getOrThrow()
+            val createdTip = result.data
+            if (createdTip == null) {
+                val errorEvent = TipValidationErrorEvent(
+                    tipId = 0,
+                    validationMessage = "Failed to create tip: data is null"
+                )
+                mediator.publish(errorEvent)
+                throw RuntimeException("Failed to create tip: data is null")
+            }
 
-            val tipDto = TipDto(
-                id = createdTip.id,
-                tipTypeId = createdTip.tipTypeId,
-                title = createdTip.title,
-                content = createdTip.content,
-                fstop = createdTip.fstop,
-                shutterSpeed = createdTip.shutterSpeed,
-                iso = createdTip.iso,
-                i8n = createdTip.i8n
-            )
-
-            return listOf(tipDto)
+            return createdTip
         } catch (ex: TipDomainException) {
             when (ex.code) {
                 "DUPLICATE_TITLE" -> {
-                    mediator.publish(
-                        TipValidationErrorEvent(
-                            tipId = null,
-                            tipTypeId = request.tipTypeId,
-                            errors = listOf("Title validation error: Duplicate title"),
-                            source = "CreateTipCommandHandler"
-                        )
+                    val errorEvent = TipValidationErrorEvent(
+                        tipId = 0,
+                        validationMessage = "Title validation error: Duplicate title"
                     )
+                    mediator.publish(errorEvent)
                     throw IllegalArgumentException("Duplicate tip title: ${request.title}")
                 }
                 "INVALID_TIP_TYPE" -> {
-                    mediator.publish(
-                        TipValidationErrorEvent(
-                            tipId = null,
-                            tipTypeId = request.tipTypeId,
-                            errors = listOf("TipTypeId validation error: Invalid tip type"),
-                            source = "CreateTipCommandHandler"
-                        )
+                    val errorEvent = TipValidationErrorEvent(
+                        tipId = 0,
+                        validationMessage = "TipTypeId validation error: Invalid tip type"
                     )
+                    mediator.publish(errorEvent)
                     throw IllegalArgumentException("Invalid tip type")
                 }
                 else -> throw ex
             }
         } catch (ex: Exception) {
-            mediator.publish(
-                TipValidationErrorEvent(
-                    tipId = null,
-                    tipTypeId = request.tipTypeId,
-                    errors = listOf("Domain error: ${ex.message}"),
-                    source = "CreateTipCommandHandler"
-                )
+            val errorEvent = TipValidationErrorEvent(
+                tipId = 0,
+                validationMessage = "Domain error: ${ex.message}"
             )
+            mediator.publish(errorEvent)
             throw RuntimeException("Failed to create tip: ${ex.message}", ex)
         }
     }

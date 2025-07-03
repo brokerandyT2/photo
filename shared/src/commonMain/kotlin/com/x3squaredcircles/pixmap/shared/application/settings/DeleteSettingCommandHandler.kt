@@ -3,10 +3,13 @@ package com.x3squaredcircles.pixmap.shared.application.settings
 
 import com.x3squaredcircles.pixmap.shared.application.common.interfaces.IUnitOfWork
 import com.x3squaredcircles.pixmap.shared.application.common.models.Result
+import com.x3squaredcircles.pixmap.shared.application.events.SettingErrorEvent
+import com.x3squaredcircles.pixmap.shared.application.events.SettingErrorType
 import com.x3squaredcircles.pixmap.shared.application.events.`events/errors`.SettingErrorEvent
 import com.x3squaredcircles.pixmap.shared.application.events.`events/errors`.SettingErrorType
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IRequestHandler
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IMediator
+import com.x3squaredcircles.pixmap.shared.application.interfaces.IRequest
 import com.x3squaredcircles.pixmap.shared.application.resources.AppResources
 import com.x3squaredcircles.pixmap.shared.domain.exceptions.SettingDomainException
 import kotlinx.coroutines.cancellation.CancellationException
@@ -19,7 +22,7 @@ import kotlinx.coroutines.cancellation.CancellationException
  */
 data class DeleteSettingCommand(
     val key: String
-)
+) : IRequest<Boolean>
 
 /**
  * Handles the deletion of a setting by its key.

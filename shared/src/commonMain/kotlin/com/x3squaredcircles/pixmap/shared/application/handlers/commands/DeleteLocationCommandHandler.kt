@@ -7,7 +7,7 @@ import com.x3squaredcircles.pixmap.shared.application.events.LocationErrorType
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IMediator
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IRequestHandler
 import com.x3squaredcircles.pixmap.shared.application.interfaces.repositories.ILocationRepository
-import com.x3squaredcircles.pixmap.shared.domain.common.Result
+import com.x3squaredcircles.pixmap.shared.application.common.models.Result
 import com.x3squaredcircles.pixmap.shared.domain.exceptions.LocationDomainException
 
 /**
@@ -16,24 +16,24 @@ import com.x3squaredcircles.pixmap.shared.domain.exceptions.LocationDomainExcept
 class DeleteLocationCommandHandler(
     private val locationRepository: ILocationRepository,
     private val mediator: IMediator
-) : IRequestHandler<DeleteLocationCommand, Boolean> {
+) : IRequestHandler<DeleteLocationCommand, Result<Boolean>> {
 
-    override suspend fun handle(request: DeleteLocationCommand): Boolean {
+    override suspend fun handle(request: DeleteLocationCommand): Result<Boolean> {
         try {
             val locationResult = locationRepository.getByIdAsync(request.id)
 
-            if (!locationResult.isSuccess || locationResult.getOrNull() == null) {
+            if (!locationResult.isSuccess || locationResult.data == null) {
                 mediator.publish(
                     LocationSaveErrorEvent(
                         "Location ID ${request.id}",
-                        LocationErrorType.DATABASE_ERROR,
+                        LocationErrorType.DatabaseError,
                         "Location not found"
                     )
                 )
-                throw IllegalArgumentException("Location not found")
+                return Result.failure("Location not found")
             }
 
-            val location = locationResult.getOrThrow()
+            val location = locationResult.data!!
             location.delete()
 
             val updateResult = locationRepository.updateAsync(location)
@@ -41,37 +41,46 @@ class DeleteLocationCommandHandler(
                 mediator.publish(
                     LocationSaveErrorEvent(
                         location.title,
-                        LocationErrorType.DATABASE_ERROR,
-                        updateResult.exceptionOrNull()?.message ?: "Update failed"
+                        LocationErrorType.DatabaseError,
+                        updateResult.errorMessage ?: "Update failed"
                     )
                 )
-                throw RuntimeException("Location update failed")
+                return Result.failure("Location update failed")
             }
 
-            return true
+            return Result.success(true)
         } catch (ex: LocationDomainException) {
             when (ex.code) {
                 "LOCATION_IN_USE" -> {
                     mediator.publish(
                         LocationSaveErrorEvent(
                             "Location ID ${request.id}",
-                            LocationErrorType.VALIDATION_ERROR,
+                            LocationErrorType.ValidationError,
                             ex.message ?: "Location is in use"
                         )
                     )
-                    throw IllegalStateException("Cannot delete location that is in use")
+                    return Result.failure("Location is currently in use and cannot be deleted")
                 }
-                else -> throw ex
+                else -> {
+                    mediator.publish(
+                        LocationSaveErrorEvent(
+                            "Location ID ${request.id}",
+                            LocationErrorType.DatabaseError,
+                            ex.message ?: "Domain error"
+                        )
+                    )
+                    return Result.failure("Failed to delete location: ${ex.message}")
+                }
             }
         } catch (ex: Exception) {
             mediator.publish(
                 LocationSaveErrorEvent(
                     "Location ID ${request.id}",
-                    LocationErrorType.DATABASE_ERROR,
-                    ex.message ?: "Delete operation failed"
+                    LocationErrorType.DatabaseError,
+                    ex.message ?: "Unknown error"
                 )
             )
-            throw RuntimeException("Failed to delete location: ${ex.message}", ex)
+            return Result.failure("Failed to delete location: ${ex.message}")
         }
     }
 }

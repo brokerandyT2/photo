@@ -17,43 +17,46 @@ import com.x3squaredcircles.pixmap.shared.domain.exceptions.TipTypeDomainExcepti
 class CreateTipTypeCommandHandler(
     private val tipTypeRepository: ITipTypeRepository,
     private val mediator: IMediator
-) : IRequestHandler<CreateTipTypeCommand, TipTypeDto> {
+) : IRequestHandler<CreateTipTypeCommand, TipType> {
 
-    override suspend fun handle(request: CreateTipTypeCommand): TipTypeDto {
+    override suspend fun handle(request: CreateTipTypeCommand): TipType {
         try {
-            val tipType = TipType(request.name)
-            tipType.setLocalization(request.i8n)
+            val tipType = TipType.create(request.name, request.i8n)
 
             val result = tipTypeRepository.addAsync(tipType)
 
             if (!result.isSuccess) {
                 mediator.publish(
                     TipTypeErrorEvent(
-                        name = request.name,
-                        tipTypeId = null,
+                        tipTypeName = request.name,
                         errorType = TipTypeErrorType.DATABASE_ERROR,
-                        message = result.exceptionOrNull()?.message ?: "Create failed"
+                        additionalContext = "Create failed"
                     )
                 )
-                throw RuntimeException("Failed to create tip type: ${result.exceptionOrNull()?.message}")
+                throw RuntimeException("Failed to create tip type: ${result.data?.toString()}")
             }
 
-            val createdTipType = result.getOrThrow()
+            val createdTipType = result.data
+            if (createdTipType == null) {
+                mediator.publish(
+                    TipTypeErrorEvent(
+                        tipTypeName = request.name,
+                        errorType = TipTypeErrorType.DATABASE_ERROR,
+                        additionalContext = "Create failed - data is null"
+                    )
+                )
+                throw RuntimeException("Failed to create tip type: data is null")
+            }
 
-            return TipTypeDto(
-                id = createdTipType.id,
-                name = createdTipType.name,
-                i8n = createdTipType.i8n
-            )
+            return createdTipType
         } catch (ex: TipTypeDomainException) {
             when (ex.code) {
                 "DUPLICATE_NAME" -> {
                     mediator.publish(
                         TipTypeErrorEvent(
-                            name = request.name,
-                            tipTypeId = null,
-                            errorType = TipTypeErrorType.DUPLICATE_NAME,
-                            message = ex.message ?: "Duplicate name"
+                            tipTypeName = request.name,
+                            errorType = TipTypeErrorType.ALREADY_EXISTS,
+                            additionalContext = "Duplicate name"
                         )
                     )
                     throw IllegalArgumentException("Duplicate tip type name: ${request.name}")
@@ -61,10 +64,9 @@ class CreateTipTypeCommandHandler(
                 "INVALID_NAME" -> {
                     mediator.publish(
                         TipTypeErrorEvent(
-                            name = request.name,
-                            tipTypeId = null,
-                            errorType = TipTypeErrorType.INVALID_NAME,
-                            message = ex.message ?: "Invalid name"
+                            tipTypeName = request.name,
+                            errorType = TipTypeErrorType.DATABASE_ERROR,
+                            additionalContext = "Invalid name"
                         )
                     )
                     throw IllegalArgumentException("Invalid tip type name")
@@ -74,10 +76,9 @@ class CreateTipTypeCommandHandler(
         } catch (ex: Exception) {
             mediator.publish(
                 TipTypeErrorEvent(
-                    name = request.name,
-                    tipTypeId = null,
+                    tipTypeName = request.name,
                     errorType = TipTypeErrorType.DATABASE_ERROR,
-                    message = ex.message ?: "Create operation failed"
+                    additionalContext = "Create operation failed"
                 )
             )
             throw RuntimeException("Failed to create tip type: ${ex.message}", ex)

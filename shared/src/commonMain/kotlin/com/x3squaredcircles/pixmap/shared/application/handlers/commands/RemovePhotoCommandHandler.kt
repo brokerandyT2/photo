@@ -8,6 +8,7 @@ import com.x3squaredcircles.pixmap.shared.application.events.LocationErrorType
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IMediator
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IRequestHandler
 import com.x3squaredcircles.pixmap.shared.application.interfaces.repositories.ILocationRepository
+import com.x3squaredcircles.pixmap.shared.application.common.models.Result
 
 /**
  * Handler for RemovePhotoCommand
@@ -15,24 +16,24 @@ import com.x3squaredcircles.pixmap.shared.application.interfaces.repositories.IL
 class RemovePhotoCommandHandler(
     private val locationRepository: ILocationRepository,
     private val mediator: IMediator
-) : IRequestHandler<RemovePhotoCommand, LocationDto> {
+) : IRequestHandler<RemovePhotoCommand, Result<LocationDto>> {
 
-    override suspend fun handle(request: RemovePhotoCommand): LocationDto {
+    override suspend fun handle(request: RemovePhotoCommand): Result<LocationDto> {
         try {
             val locationResult = locationRepository.getByIdAsync(request.locationId)
 
-            if (!locationResult.isSuccess || locationResult.getOrNull() == null) {
+            if (!locationResult.isSuccess || locationResult.data == null) {
                 mediator.publish(
                     LocationSaveErrorEvent(
                         "Location ID ${request.locationId}",
-                        LocationErrorType.DATABASE_ERROR,
+                        LocationErrorType.DatabaseError,
                         "Location not found"
                     )
                 )
-                throw IllegalArgumentException("Location not found")
+                return Result.failure("Location not found")
             }
 
-            val location = locationResult.getOrThrow()
+            val location = locationResult.data!!
             location.removePhoto()
 
             val updateResult = locationRepository.updateAsync(location)
@@ -40,23 +41,24 @@ class RemovePhotoCommandHandler(
                 mediator.publish(
                     LocationSaveErrorEvent(
                         location.title,
-                        LocationErrorType.DATABASE_ERROR,
-                        updateResult.exceptionOrNull()?.message ?: "Update failed"
+                        LocationErrorType.DatabaseError,
+                        updateResult.errorMessage ?: "Update failed"
                     )
                 )
-                throw RuntimeException("Location update failed")
+                return Result.failure("Location update failed")
             }
 
-            return mapToDto(location)
+            val locationDto = mapToDto(location)
+            return Result.success(locationDto)
         } catch (ex: Exception) {
             mediator.publish(
                 LocationSaveErrorEvent(
                     "Location ID ${request.locationId}",
-                    LocationErrorType.NETWORK_ERROR,
+                    LocationErrorType.DatabaseError,
                     ex.message ?: "Remove photo operation failed"
                 )
             )
-            throw RuntimeException("Failed to remove photo: ${ex.message}", ex)
+            return Result.failure("Failed to remove photo: ${ex.message}")
         }
     }
 

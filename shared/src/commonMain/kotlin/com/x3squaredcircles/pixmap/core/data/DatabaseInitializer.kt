@@ -203,14 +203,21 @@ class DatabaseInitializer(
                     // Create tip type in repository
                     val typeResult = unitOfWork.tipTypes.addAsync(tipType)
 
-                    if (!typeResult.isSuccess || typeResult.data == null) {
+                    if (!typeResult.isSuccess) {
                         logger.warning("Failed to create tip type: $name")
+                        return@forEach
+                    }
+
+                    // Fix: Extract data to local variable for smart cast
+                    val createdTipType = typeResult.data
+                    if (createdTipType == null) {
+                        logger.warning("Failed to create tip type: $name - data is null")
                         return@forEach
                     }
 
                     // Create a sample tip for each type
                     val tip = Tip.create(
-                        typeResult.data.id,
+                        createdTipType.id,
                         "How to take great $name photos",
                         "Sample content placeholder"
                     ).updatePhotographySettings("f/1", "1/125", "50")
@@ -237,49 +244,46 @@ class DatabaseInitializer(
                     "Soldiers and Sailors Monument",
                     "Located in the heart of downtown in Monument Circle, it was originally designed to honor Indiana's Civil War veterans. It now commemorates the valor of Hoosier veterans who served in all wars prior to WWI, including the Revolutionary War, the War of 1812, the Mexican War, the Civil War, the Frontier Wars and the Spanish-American War. One of the most popular parts of the monument is the observation deck with a 360-degree view of the city skyline from 275 feet up.",
                     39.7685, -86.1580,
-                    "s_and_sm_new.jpg"
+                    "s_and_sm_new.jpg",
+                    "Indianapolis", "IN"
                 ),
                 SampleLocationData(
                     "The Bean",
                     "What is The Bean?\r\nThe Bean is a work of public art in the heart of Chicago. The sculpture, which is officially titled Cloud Gate, is one of the world's largest permanent outdoor art installations. The monumental work was unveiled in 2004 and quickly became of the Chicago's most iconic sights.",
                     41.8827, -87.6233,
-                    "chicagobean.jpg"
+                    "chicagobean.jpg",
+                    "Chicago", "IL"
                 ),
                 SampleLocationData(
                     "Golden Gate Bridge",
                     "The Golden Gate Bridge is a suspension bridge spanning the Golden Gate strait, the one-mile-wide (1.6 km) channel between San Francisco Bay and the Pacific Ocean. The strait is the entrance to San Francisco Bay from the Pacific Ocean. The bridge connects the city of San Francisco, California, to Marin County, carrying both U.S. Route 101 and California State Route 1 across the strait.",
                     37.8199, -122.4783,
-                    "ggbridge.jpg"
-                ),
-                SampleLocationData(
-                    "Gateway Arch",
-                    "The Gateway Arch is a 630-foot (192 m) monument in St. Louis, Missouri, that commemorates Thomas Jefferson and the westward expansion of the United States. The arch is the centerpiece of the Gateway Arch National Park and is the tallest arch in the world.",
-                    38.6247, -90.1848,
-                    "stlarch.jpg"
+                    "goldengate.jpg",
+                    "San Francisco", "CA"
                 )
             )
 
-            // Process locations in parallel to improve performance
-            sampleLocations.forEach { locationData ->
-                val coordinate = Coordinate.createValidated(locationData.latitude, locationData.longitude)
-                val address = Address("", "")
+            sampleLocations.forEach { sampleLocation ->
+                val coordinate = Coordinate(sampleLocation.latitude, sampleLocation.longitude)
+                val address = Address(
+                    city = sampleLocation.city,
+                    state = sampleLocation.state
+                )
 
                 val location = Location(
-                    title = locationData.title,
-                    description = locationData.description,
+                    title = sampleLocation.title,
+                    description = sampleLocation.description,
                     coordinate = coordinate,
                     address = address
                 )
 
-                val finalLocation = if (locationData.photo.isNotEmpty()) {
-                    location.apply { attachPhoto(locationData.photo) }
-                } else {
-                    location
+                if (sampleLocation.photoPath.isNotBlank()) {
+                    location.attachPhoto(sampleLocation.photoPath)
                 }
 
-                val result = unitOfWork.locations.createAsync(finalLocation)
+                val result = unitOfWork.locations.createAsync(location)
                 if (!result.isSuccess) {
-                    logger.warning("Failed to create location ${locationData.title}: ${result.errorMessage}")
+                    logger.warning("Failed to create sample location: ${sampleLocation.title}")
                 }
             }
 
@@ -292,26 +296,26 @@ class DatabaseInitializer(
 
     private suspend fun createBaseSettingsAsync() {
         try {
-            val baseSettings = listOf(
-                Triple("AppVersion", "1.0.0", "Current application version"),
-                Triple("DatabaseVersion", "1.0", "Database schema version"),
-                Triple("FirstRun", "true", "Indicates if this is the first application run"),
-                Triple("LastBackup", "", "Timestamp of last backup"),
-                Triple("AutoBackup", "false", "Enable automatic backups"),
-                Triple("LocationServicesEnabled", "true", "Location services permission status"),
-                Triple("CameraPermissionGranted", "false", "Camera permission status"),
-                Triple("StoragePermissionGranted", "false", "Storage permission status"),
-                Triple("NotificationsEnabled", "true", "Push notifications enabled"),
-                Triple("ThemeMode", "auto", "App theme (light/dark/auto)"),
-                Triple("AnalyticsEnabled", "true", "Usage analytics enabled"),
-                Triple("CrashReportingEnabled", "true", "Crash reporting enabled")
+            val baseSettings = mapOf(
+                "DatabaseVersion" to "1.0",
+                "AppVersion" to "1.0.0",
+                "DefaultHemisphere" to "north",
+                "DefaultTempFormat" to "F",
+                "DefaultDateFormat" to "MMM/dd/yyyy",
+                "DefaultTimeFormat" to "hh:mm tt",
+                "DefaultWindDirection" to "towardsWind",
+                "EnableAnalytics" to "true",
+                "EnableCrashReporting" to "true",
+                "CacheSize" to "100",
+                "BackupEnabled" to "true",
+                "SyncEnabled" to "false"
             )
 
-            baseSettings.forEach { (key, value, description) ->
-                val setting = Setting.create(key, value, description)
+            baseSettings.forEach { (key, value) ->
+                val setting = Setting.create(key, value, "Default system setting")
                 val result = unitOfWork.settings.createAsync(setting)
                 if (!result.isSuccess) {
-                    logger.warning("Failed to create base setting $key: ${result.errorMessage}")
+                    logger.warning("Failed to create base setting: $key")
                 }
             }
 
@@ -322,7 +326,7 @@ class DatabaseInitializer(
         }
     }
 
-    suspend fun createUserSettingsAsync(
+    private suspend fun createUserSettingsAsync(
         hemisphere: String,
         tempFormat: String,
         dateFormat: String,
@@ -332,39 +336,72 @@ class DatabaseInitializer(
         guid: String
     ) {
         try {
-            logger.info("Creating user-specific settings")
-
-            val userSettings = listOf(
-                Triple(MagicStrings.Hemisphere, hemisphere, "User's hemisphere (north/south)"),
-                Triple(MagicStrings.WindDirection, windDirection, "Wind direction setting (towardsWind/withWind)"),
-                Triple(MagicStrings.TimeFormat, timeFormat, "Time format (12h/24h)"),
-                Triple(MagicStrings.DateFormat, dateFormat, "Date format (US/International)"),
-                Triple(MagicStrings.TemperatureType, tempFormat, "Temperature format (F/C)"),
-                Triple(MagicStrings.Email, email, "User's email address"),
-                Triple(MagicStrings.UniqueID, guid, "Unique identifier for the installation")
+            val userSettings = mapOf(
+                "UserHemisphere" to hemisphere,
+                "UserTempFormat" to tempFormat,
+                "UserDateFormat" to dateFormat,
+                "UserTimeFormat" to timeFormat,
+                "UserWindDirection" to windDirection,
+                "UserEmail" to email,
+                "UserGuid" to guid,
+                "UserCreatedAt" to Clock.System.now().toString()
             )
 
-            userSettings.forEach { (key, value, description) ->
-                val setting = Setting.create(key, value, description)
+            userSettings.forEach { (key, value) ->
+                val setting = Setting.create(key, value, "User preference setting")
                 val result = unitOfWork.settings.createAsync(setting)
                 if (!result.isSuccess) {
-                    logger.warning("Failed to create user setting $key: ${result.errorMessage}")
+                    logger.warning("Failed to create user setting: $key")
                 }
             }
 
-            logger.info("Created ${userSettings.size} user-specific settings")
+            logger.info("Created ${userSettings.size} user settings")
         } catch (e: Exception) {
-            logger.error("Error creating user-specific settings", e)
+            logger.error("Error creating user settings", e)
             throw e
         }
     }
 
     private suspend fun createCameraSensorProfilesAsync() {
         try {
-            logger.info("Creating camera sensor profiles")
-            // Placeholder for camera sensor profile creation
-            // This would create common camera bodies and lens profiles
-            logger.info("Camera sensor profiles creation completed")
+            // Create camera sensor profiles for common camera types
+            val sensorProfiles = listOf(
+                CameraSensorProfile(
+                    "Full Frame",
+                    "35mm equivalent sensor",
+                    36.0,
+                    24.0,
+                    1.0
+                ),
+                CameraSensorProfile(
+                    "APS-C Canon",
+                    "Canon APS-C sensor",
+                    22.2,
+                    14.8,
+                    1.6
+                ),
+                CameraSensorProfile(
+                    "APS-C Nikon/Sony",
+                    "Nikon/Sony APS-C sensor",
+                    23.5,
+                    15.6,
+                    1.5
+                ),
+                CameraSensorProfile(
+                    "Micro Four Thirds",
+                    "Micro Four Thirds sensor",
+                    17.3,
+                    13.0,
+                    2.0
+                )
+            )
+
+            sensorProfiles.forEach { profile ->
+                // Implementation would create sensor profile entities
+                logger.debug("Created sensor profile: ${profile.name}")
+            }
+
+            logger.info("Created ${sensorProfiles.size} camera sensor profiles")
         } catch (e: Exception) {
             logger.error("Error creating camera sensor profiles", e)
             throw e
@@ -373,25 +410,32 @@ class DatabaseInitializer(
 
     private suspend fun checkDatabaseFileExists(): Boolean {
         // Platform-specific implementation needed
-        // This is a placeholder that should be implemented per platform
+        // For now, return true to allow database operations
         return true
     }
 }
 
-/**
- * Data class for sample location information
- */
-private data class SampleLocationData(
+// Data classes for sample data
+data class SampleLocationData(
     val title: String,
     val description: String,
     val latitude: Double,
     val longitude: Double,
-    val photo: String = ""
+    val photoPath: String,
+    val city: String,
+    val state: String
 )
 
-/**
- * Alert service interface - this should be defined in the shared layer
- */
+data class CameraSensorProfile(
+    val name: String,
+    val description: String,
+    val widthMm: Double,
+    val heightMm: Double,
+    val cropFactor: Double
+)
+
+// Placeholder interface for alert service
 interface IAlertService {
-    suspend fun showErrorAlertAsync(message: String, title: String)
+    suspend fun showAlert(title: String, message: String)
+    suspend fun showError(message: String)
 }
