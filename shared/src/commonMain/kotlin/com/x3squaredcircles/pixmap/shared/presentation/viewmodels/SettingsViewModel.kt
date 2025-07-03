@@ -3,12 +3,16 @@ package com.x3squaredcircles.pixmap.shared.presentation.viewmodels
 
 import com.x3squaredcircles.pixmap.shared.application.commands.CreateSettingCommand
 import com.x3squaredcircles.pixmap.shared.application.commands.UpdateSettingCommand
+import com.x3squaredcircles.pixmap.shared.application.handlers.queries.GetAllSettingsQuery
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IMediator
 import com.x3squaredcircles.pixmap.shared.application.interfaces.services.IErrorDisplayService
-import com.x3squaredcircles.pixmap.shared.application.queries.GetAllSettingsQuery
+
 import com.x3squaredcircles.pixmap.shared.application.queries.GetSettingByKeyQuery
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
 import kotlinx.datetime.Instant
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 
 /**
  * View model for application settings management
@@ -73,30 +77,29 @@ class SettingsViewModel(
     /**
      * Loads all settings from the data store
      */
-    suspend fun loadSettings() = executeSafely {
-        val query = GetAllSettingsQuery()
-        val result = mediator.send(query)
+    suspend fun loadSettings() = executeSafely(
+        operation = {
+            val query = GetAllSettingsQuery()
+            val result = mediator.send(query)
 
-        when {
-            result.isSuccess && result.data != null -> {
-                val settingViewModels = result.data.map { dto ->
+            if (result != null) {
+                val settingViewModels = result.map { setting ->
                     SettingItemViewModel(
-                        id = dto.id,
-                        key = dto.key,
-                        value = dto.value,
-                        description = dto.description,
-                        timestamp = dto.timestamp
+                        id = setting.id,
+                        key = setting.key,
+                        value = setting.value,
+                        description = setting.description,
+                        timestamp = setting.timestamp
                     )
                 }
 
                 _settings.value = settingViewModels
                 clearUnsavedChanges()
-            }
-            else -> {
-                onSystemError(result.errorMessage ?: "Failed to load settings")
+            } else {
+                onSystemError("Failed to load settings")
             }
         }
-    }
+    )
 
     /**
      * Gets a specific setting by key
@@ -105,17 +108,16 @@ class SettingsViewModel(
         val query = GetSettingByKeyQuery(key)
         val result = mediator.send(query)
 
-        return when {
-            result.isSuccess && result.data != null -> {
-                SettingItemViewModel(
-                    id = result.data.id,
-                    key = result.data.key,
-                    value = result.data.value,
-                    description = result.data.description,
-                    timestamp = result.data.timestamp
-                )
-            }
-            else -> null
+        return if (result != null) {
+            SettingItemViewModel(
+                id = result.id,
+                key = result.key,
+                value = result.value,
+                description = result.description,
+                timestamp = result.timestamp
+            )
+        } else {
+            null
         }
     }
 
@@ -132,72 +134,71 @@ class SettingsViewModel(
     /**
      * Creates a new setting
      */
-    suspend fun createSetting(key: String, value: String, description: String = "") = executeSafely {
-        if (key.isBlank()) {
-            setValidationError("Setting key cannot be empty")
-            return@executeSafely
-        }
+    suspend fun createSetting(key: String, value: String, description: String = "") = executeSafely(
+        operation = {
+            if (key.isBlank()) {
+                setValidationError("Setting key cannot be empty")
+                return@executeSafely
+            }
 
-        val command = CreateSettingCommand(
-            key = key,
-            value = value,
-            description = description
-        )
+            val command = CreateSettingCommand(
+                key = key,
+                value = value,
+                description = description
+            )
 
-        val result = mediator.send(command)
+            val result = mediator.send(command)
 
-        when {
-            result.isSuccess && result.data != null -> {
+            if (result != null) {
                 // Reload settings to include the new one
-                loadSettings()
-            }
-            else -> {
-                onSystemError(result.errorMessage ?: "Failed to create setting")
+                viewModelScope.launch { loadSettings() }
+            } else {
+                onSystemError("Failed to create setting")
             }
         }
-    }
+    )
+
+    /**
+     * Updates an existing setting
+     */
+    suspend fun updateSetting(key: String, value: String) = executeSafely(
+        operation = {
+            val command = UpdateSettingCommand(
+                key = key,
+                value = value
+            )
+
+            val result = mediator.send(command)
+
+            if (result != null) {
+                // Reload settings to reflect the change
+                viewModelScope.launch { loadSettings() }
+            } else {
+                onSystemError("Failed to update setting")
+            }
+        }
+    )
 
     /**
      * Saves all pending changes
      */
-    suspend fun saveChanges() = executeSafely {
-        val editing = _editingSettings.value
-        if (editing.isEmpty()) {
-            return@executeSafely
+    suspend fun saveChanges() {
+        val edits = _editingSettings.value
+        for ((key, value) in edits) {
+            updateSetting(key, value)
         }
-
-        // Update each changed setting
-        editing.forEach { (key, value) ->
-            val setting = _settings.value.find { it.key == key }
-            if (setting != null) {
-                val command = UpdateSettingCommand(
-                    key = key,
-                    value = value,
-                    description = setting.description
-                )
-
-                val result = mediator.send(command)
-                if (!result.isSuccess) {
-                    onSystemError(result.errorMessage ?: "Failed to update setting: $key")
-                    return@executeSafely
-                }
-            }
-        }
-
-        // Reload settings to reflect changes
-        loadSettings()
+        clearUnsavedChanges()
     }
 
     /**
-     * Discards all unsaved changes
+     * Discards all pending changes
      */
     fun discardChanges() {
-        _editingSettings.value = emptyMap()
-        _hasUnsavedChanges.value = false
+        clearUnsavedChanges()
     }
 
     /**
-     * Clears unsaved changes state
+     * Clears all unsaved changes
      */
     private fun clearUnsavedChanges() {
         _editingSettings.value = emptyMap()
@@ -205,9 +206,9 @@ class SettingsViewModel(
     }
 
     /**
-     * Searches settings by term
+     * Sets the search term for filtering settings
      */
-    fun search(term: String) {
+    fun setSearchTerm(term: String) {
         _searchTerm.value = term
     }
 
@@ -219,9 +220,9 @@ class SettingsViewModel(
     }
 
     /**
-     * Gets the current display value for a setting (edited or original)
+     * Gets the current value of a setting (either edited or original)
      */
-    fun getDisplayValue(key: String): String {
+    fun getCurrentValue(key: String): String {
         return _editingSettings.value[key]
             ?: _settings.value.find { it.key == key }?.value
             ?: ""
@@ -282,7 +283,7 @@ data class SettingItemViewModel(
      */
     val formattedTimestamp: String
         get() {
-            val localDateTime = timestamp.toLocalDateTime(kotlinx.datetime.TimeZone.currentSystemDefault())
+            val localDateTime = timestamp.toLocalDateTime(TimeZone.currentSystemDefault())
             return "${localDateTime.date} ${localDateTime.time}"
         }
 

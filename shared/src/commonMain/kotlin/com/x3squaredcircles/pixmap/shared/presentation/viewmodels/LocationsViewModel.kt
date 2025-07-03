@@ -5,7 +5,10 @@ import com.x3squaredcircles.pixmap.shared.application.interfaces.IMediator
 import com.x3squaredcircles.pixmap.shared.application.interfaces.services.IErrorDisplayService
 import com.x3squaredcircles.pixmap.shared.application.queries.GetLocationsQuery
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
 import kotlinx.datetime.Instant
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 
 /**
  * View model for displaying a list of locations with pagination support
@@ -54,23 +57,22 @@ class LocationsViewModel(
     /**
      * Loads locations based on current filter and pagination settings
      */
-    suspend fun loadLocations() = executeSafely {
-        val query = GetLocationsQuery(
-            pageNumber = _currentPage.value,
-            pageSize = _pageSize.value,
-            searchTerm = _searchTerm.value.takeIf { it.isNotBlank() },
-            includeDeleted = _includeDeleted.value
-        )
+    suspend fun loadLocations() = executeSafely(
+        operation = {
+            val query = GetLocationsQuery(
+                pageNumber = _currentPage.value,
+                pageSize = _pageSize.value,
+                searchTerm = _searchTerm.value.takeIf { it.isNotBlank() },
+                includeDeleted = _includeDeleted.value
+            )
 
-        val result = mediator.send(query)
+            val result = mediator.send(query)
 
-        when {
-            result.isSuccess && result.data != null -> {
-                val pagedData = result.data
-                _totalCount.value = pagedData.totalCount
+            if (result != null) {
+                _totalCount.value = result.totalCount
 
                 // Map domain DTOs to view models
-                val locationViewModels = pagedData.items.map { dto ->
+                val locationViewModels = result.items.map { dto ->
                     LocationListItemViewModel(
                         id = dto.id,
                         title = dto.title,
@@ -85,12 +87,11 @@ class LocationsViewModel(
                 }
 
                 _locations.value = locationViewModels
-            }
-            else -> {
-                onSystemError(result.errorMessage ?: "Failed to load locations")
+            } else {
+                onSystemError("Failed to load locations")
             }
         }
-    }
+    )
 
     /**
      * Refreshes the current page of locations
@@ -196,7 +197,7 @@ data class LocationListItemViewModel(
      */
     val formattedTimestamp: String
         get() {
-            val localDateTime = timestamp.toLocalDateTime(kotlinx.datetime.TimeZone.currentSystemDefault())
+            val localDateTime = timestamp.toLocalDateTime(TimeZone.currentSystemDefault())
             return "${localDateTime.date} ${localDateTime.time}"
         }
 

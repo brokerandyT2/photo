@@ -105,95 +105,107 @@ class SubscriptionViewModel(
      */
     private fun loadInitialData() {
         viewModelScope.launch {
-            executeSafely {
-                // Load in parallel
-                launch { loadCurrentSubscription() }
-                launch { loadAvailableProducts() }
-                launch { loadEntitlements() }
-            }
+            executeSafely(
+                operation = {
+                    // Load in parallel
+                    launch { loadCurrentSubscription() }
+                    launch { loadAvailableProducts() }
+                    launch { loadEntitlements() }
+                }
+            )
         }
     }
 
     /**
      * Loads the current active subscription
      */
-    suspend fun loadCurrentSubscription() = executeSafely {
-        logger.logInfo("Loading current subscription for user: $userId")
+    suspend fun loadCurrentSubscription() = executeSafely(
+        operation = {
+            logger.logInfo("Loading current subscription for user: $userId")
 
-        val result = subscriptionService.getActiveSubscriptionAsync(userId)
+            val result = subscriptionService.getActiveSubscriptionAsync(userId)
 
-        if (result.isSuccess) {
-            _currentSubscription.value = result.getOrNull()
+            if (result.isSuccess) {
+                _currentSubscription.value = result.data
 
-            // Load subscription history if we have an active subscription
-            result.getOrNull()?.let {
-                loadSubscriptionHistory()
+                // Load subscription history if we have an active subscription
+                result.data?.let {
+                    viewModelScope.launch { loadSubscriptionHistory() }
+                }
+            } else {
+                logger.logWarning("No active subscription found for user: $userId")
             }
-        } else {
-            logger.logWarning("No active subscription found for user: $userId")
         }
-    }
+    )
 
     /**
      * Loads available subscription products
      */
-    suspend fun loadAvailableProducts() = executeSafely {
-        logger.logInfo("Loading available subscription products")
+    suspend fun loadAvailableProducts() = executeSafely(
+        operation = {
+            logger.logInfo("Loading available subscription products")
 
-        val result = subscriptionService.getAvailableProductsAsync()
+            val result = subscriptionService.getAvailableProductsAsync()
 
-        if (result.isSuccess) {
-            val products = result.getOrThrow().sortedWith(
-                compareBy<SubscriptionProductDto> { it.sortOrder }
-                    .thenBy { it.billingPeriod.ordinal }
-            )
-            _availableProducts.value = products
-        } else {
-            onSystemError("Failed to load subscription products")
+            if (result.isSuccess) {
+                val products = result.data?.sortedWith(
+                    compareBy<SubscriptionProductDto> { it.sortOrder }
+                        .thenBy { it.billingPeriod.ordinal }
+                ) ?: emptyList()
+                _availableProducts.value = products
+            } else {
+                onSystemError("Failed to load subscription products")
+            }
         }
-    }
+    )
 
     /**
      * Loads subscription history for the user
      */
-    suspend fun loadSubscriptionHistory() = executeSafely {
-        logger.logInfo("Loading subscription history for user: $userId")
+    suspend fun loadSubscriptionHistory() = executeSafely(
+        operation = {
+            logger.logInfo("Loading subscription history for user: $userId")
 
-        val result = subscriptionService.getUserSubscriptionsAsync(userId, includeInactive = true)
+            val result = subscriptionService.getUserSubscriptionsAsync(userId, includeInactive = true)
 
-        if (result.isSuccess) {
-            _subscriptionHistory.value = result.getOrThrow()
+            if (result.isSuccess) {
+                _subscriptionHistory.value = result.data ?: emptyList()
+            }
         }
-    }
+    )
 
     /**
      * Loads billing history for the current subscription
      */
-    suspend fun loadBillingHistory() = executeSafely {
-        val currentSub = _currentSubscription.value
-        if (currentSub != null) {
-            logger.logInfo("Loading billing history for subscription: ${currentSub.id}")
+    suspend fun loadBillingHistory() = executeSafely(
+        operation = {
+            val currentSub = _currentSubscription.value
+            if (currentSub != null) {
+                logger.logInfo("Loading billing history for subscription: ${currentSub.id}")
 
-            val result = subscriptionService.getBillingHistoryAsync(currentSub.id)
+                val result = subscriptionService.getBillingHistoryAsync(currentSub.id)
 
-            if (result.isSuccess) {
-                _billingHistory.value = result.getOrThrow().billingEvents
+                if (result.isSuccess) {
+                    _billingHistory.value = result.data?.billingEvents ?: emptyList()
+                }
             }
         }
-    }
+    )
 
     /**
      * Loads user entitlements
      */
-    suspend fun loadEntitlements() = executeSafely {
-        logger.logInfo("Loading entitlements for user: $userId")
+    suspend fun loadEntitlements() = executeSafely(
+        operation = {
+            logger.logInfo("Loading entitlements for user: $userId")
 
-        val result = subscriptionService.checkEntitlementsAsync(userId)
+            val result = subscriptionService.checkEntitlementsAsync(userId)
 
-        if (result.isSuccess) {
-            _entitlements.value = result.getOrThrow()
+            if (result.isSuccess) {
+                _entitlements.value = result.data ?: emptyMap()
+            }
         }
-    }
+    )
 
     /**
      * Initiates a subscription purchase
@@ -202,229 +214,193 @@ class SubscriptionViewModel(
         productId: String,
         purchaseToken: String,
         transactionId: String
-    ) = executeSafely {
-        if (_isPurchasing.value) {
-            logger.logWarning("Purchase already in progress")
-            return@executeSafely
-        }
-
-        _isPurchasing.value = true
-        _purchaseStatus.value = PurchaseStatus.Processing
-
-        try {
-            logger.logInfo("Starting subscription purchase for product: $productId")
-
-            val result = subscriptionService.purchaseSubscriptionAsync(
-                userId = userId,
-                productId = productId,
-                purchaseToken = purchaseToken,
-                transactionId = transactionId
-            )
-
-            if (result.isSuccess) {
-                val response = result.getOrThrow()
-                _currentSubscription.value = response.subscription
-                _purchaseStatus.value = PurchaseStatus.Success("Subscription activated successfully!")
-
-                // Reload related data
-                launch { loadEntitlements() }
-                launch { loadSubscriptionHistory() }
-
-                logger.logInfo("Subscription purchase completed successfully")
-            } else {
-                _purchaseStatus.value = PurchaseStatus.Error(
-                    result.exceptionOrNull()?.message ?: "Purchase failed"
-                )
-                onSystemError("Purchase failed: ${result.exceptionOrNull()?.message}")
+    ) = executeSafely(
+        operation = {
+            if (_isPurchasing.value) {
+                logger.logWarning("Purchase already in progress")
+                return@executeSafely
             }
-        } catch (ex: Exception) {
-            _purchaseStatus.value = PurchaseStatus.Error("Purchase failed: ${ex.message}")
-            logger.logError("Subscription purchase failed", ex)
-        } finally {
-            _isPurchasing.value = false
+
+            _isPurchasing.value = true
+            _purchaseStatus.value = PurchaseStatus.Processing
+
+            try {
+                logger.logInfo("Starting subscription purchase for product: $productId")
+
+                val result = subscriptionService.purchaseSubscriptionAsync(
+                    userId = userId,
+                    productId = productId,
+                    purchaseToken = purchaseToken,
+                    transactionId = transactionId
+                )
+
+                if (result.isSuccess) {
+                    val response = result.data
+                    if (response != null) {
+                        _currentSubscription.value = response.subscription
+                        _purchaseStatus.value = PurchaseStatus.Success("Subscription activated successfully!")
+
+                        // Reload related data
+                        viewModelScope.launch { loadEntitlements() }
+                        viewModelScope.launch { loadSubscriptionHistory() }
+
+                        logger.logInfo("Subscription purchase completed successfully")
+                    } else {
+                        _purchaseStatus.value = PurchaseStatus.Error("Purchase failed: No response data")
+                        onSystemError("Purchase failed: No response data")
+                    }
+                } else {
+                    _purchaseStatus.value = PurchaseStatus.Error(
+                        result.errorMessage ?: "Purchase failed"
+                    )
+                    onSystemError("Purchase failed: ${result.errorMessage}")
+                }
+            } catch (ex: Exception) {
+                _purchaseStatus.value = PurchaseStatus.Error("Purchase failed: ${ex.message}")
+                logger.logError("Purchase failed", ex)
+            } finally {
+                _isPurchasing.value = false
+            }
         }
-    }
+    )
 
     /**
      * Restores previous purchases
      */
-    suspend fun restorePurchases() = executeSafely {
-        if (_isRestoring.value) {
-            logger.logWarning("Restore already in progress")
-            return@executeSafely
-        }
-
-        _isRestoring.value = true
-
-        try {
-            logger.logInfo("Restoring purchases for user: $userId")
-
-            val result = subscriptionService.restoreSubscriptionsAsync(userId)
-
-            if (result.isSuccess) {
-                val restoreResult = result.getOrThrow()
-
-                if (restoreResult.totalRestored > 0) {
-                    _purchaseStatus.value = PurchaseStatus.Success(
-                        "Restored ${restoreResult.totalRestored} subscription(s)"
-                    )
-
-                    // Reload subscription data
-                    loadCurrentSubscription()
-                } else {
-                    _purchaseStatus.value = PurchaseStatus.Info("No purchases found to restore")
-                }
-
-                logger.logInfo("Purchase restore completed: ${restoreResult.totalRestored} restored")
-            } else {
-                _purchaseStatus.value = PurchaseStatus.Error(
-                    result.exceptionOrNull()?.message ?: "Restore failed"
-                )
-                onSystemError("Restore failed: ${result.exceptionOrNull()?.message}")
+    suspend fun restorePurchases() = executeSafely(
+        operation = {
+            if (_isRestoring.value) {
+                logger.logWarning("Restore already in progress")
+                return@executeSafely
             }
-        } catch (ex: Exception) {
-            _purchaseStatus.value = PurchaseStatus.Error("Restore failed: ${ex.message}")
-            logger.logError("Purchase restore failed", ex)
-        } finally {
-            _isRestoring.value = false
+
+            _isRestoring.value = true
+
+            try {
+                logger.logInfo("Restoring purchases for user: $userId")
+
+                val result = subscriptionService.restoreSubscriptionsAsync(userId)
+
+                if (result.isSuccess) {
+                    val response = result.data
+                    if (response != null) {
+                        _purchaseStatus.value = PurchaseStatus.Success("Purchases restored successfully!")
+
+                        // Reload related data
+                        viewModelScope.launch { loadCurrentSubscription() }
+                        viewModelScope.launch { loadEntitlements() }
+                        viewModelScope.launch { loadSubscriptionHistory() }
+
+                        logger.logInfo("Purchase restoration completed successfully")
+                    } else {
+                        _purchaseStatus.value = PurchaseStatus.Error("Restore failed: No response data")
+                        onSystemError("Restore failed: No response data")
+                    }
+                } else {
+                    _purchaseStatus.value = PurchaseStatus.Error(
+                        result.errorMessage ?: "Restore failed"
+                    )
+                    onSystemError("Restore failed: ${result.errorMessage}")
+                }
+            } catch (ex: Exception) {
+                _purchaseStatus.value = PurchaseStatus.Error("Restore failed: ${ex.message}")
+                logger.logError("Purchase restore failed", ex)
+            } finally {
+                _isRestoring.value = false
+            }
         }
-    }
+    )
 
     /**
      * Cancels the current subscription
      */
-    suspend fun cancelSubscription(reason: String? = null) = executeSafely {
-        val currentSub = _currentSubscription.value
-        if (currentSub == null) {
-            onSystemError("No active subscription to cancel")
-            return@executeSafely
+    suspend fun cancelSubscription(reason: String? = null) = executeSafely(
+        operation = {
+            val currentSub = _currentSubscription.value
+            if (currentSub == null) {
+                onSystemError("No active subscription to cancel")
+                return@executeSafely
+            }
+
+            logger.logInfo("Cancelling subscription: ${currentSub.id}")
+
+            val result = subscriptionService.cancelSubscriptionAsync(currentSub.id, reason)
+
+            if (result.isSuccess) {
+                _purchaseStatus.value = PurchaseStatus.Success("Subscription cancelled successfully")
+                viewModelScope.launch { loadCurrentSubscription() } // Reload to get updated status
+                logger.logInfo("Subscription cancellation completed")
+            } else {
+                onSystemError("Cancellation failed: ${result.errorMessage}")
+            }
         }
-
-        logger.logInfo("Cancelling subscription: ${currentSub.id}")
-
-        val result = subscriptionService.cancelSubscriptionAsync(currentSub.id, reason)
-
-        if (result.isSuccess) {
-            _purchaseStatus.value = PurchaseStatus.Success("Subscription cancelled successfully")
-            loadCurrentSubscription() // Reload to get updated status
-            logger.logInfo("Subscription cancellation completed")
-        } else {
-            onSystemError("Cancellation failed: ${result.exceptionOrNull()?.message}")
-        }
-    }
+    )
 
     /**
      * Verifies the current subscription with the store
      */
-    suspend fun verifySubscription(forceRefresh: Boolean = false) = executeSafely {
-        val currentSub = _currentSubscription.value
-        if (currentSub == null) {
-            logger.logWarning("No subscription to verify")
-            return@executeSafely
-        }
+    suspend fun verifySubscription(forceRefresh: Boolean = false) = executeSafely(
+        operation = {
+            val currentSub = _currentSubscription.value
+            if (currentSub == null) {
+                logger.logWarning("No subscription to verify")
+                return@executeSafely
+            }
 
-        logger.logInfo("Verifying subscription: ${currentSub.id}")
+            logger.logInfo("Verifying subscription: ${currentSub.id}")
 
-        val result = subscriptionService.verifySubscriptionAsync(currentSub.id, forceRefresh)
+            val result = subscriptionService.verifySubscriptionAsync(currentSub.id, forceRefresh)
 
-        if (result.isSuccess) {
-            val verification = result.getOrThrow()
-            if (verification.isValid) {
-                _purchaseStatus.value = PurchaseStatus.Success("Subscription verified successfully")
-                loadCurrentSubscription() // Reload to get any updates
+            if (result.isSuccess) {
+                val verification = result.data
+                if (verification != null) {
+                    if (verification.isValid) {
+                        _purchaseStatus.value = PurchaseStatus.Success("Subscription verified successfully")
+                        viewModelScope.launch { loadCurrentSubscription() } // Reload to get any updates
+                    } else {
+                        _purchaseStatus.value = PurchaseStatus.Error(
+                            verification.errorMessage ?: "Verification failed"
+                        )
+                        onSystemError("Verification failed: ${verification.errorMessage}")
+                    }
+                } else {
+                    _purchaseStatus.value = PurchaseStatus.Error("Verification failed: No response data")
+                    onSystemError("Verification failed: No response data")
+                }
             } else {
-                _purchaseStatus.value = PurchaseStatus.Error(
-                    verification.errorMessage ?: "Subscription verification failed"
-                )
+                onSystemError("Verification failed: ${result.errorMessage}")
             }
-        } else {
-            onSystemError("Verification failed: ${result.exceptionOrNull()?.message}")
+        }
+    )
+
+    /**
+     * Checks if one product is an upgrade from another
+     */
+    private fun isUpgrade(currentProductId: String, newProductId: String): Boolean {
+        // Implementation would depend on your product hierarchy
+        // For example, yearly might be an upgrade from monthly
+        return when {
+            currentProductId.contains("monthly") && newProductId.contains("yearly") -> true
+            currentProductId.contains("basic") && newProductId.contains("premium") -> true
+            else -> false
         }
     }
 
     /**
-     * Clears the current purchase status
+     * Gets display name for a product ID
      */
-    fun clearPurchaseStatus() {
-        _purchaseStatus.value = null
-    }
-
-    /**
-     * Refreshes all subscription data
-     */
-    suspend fun refreshData() = executeSafely {
-        logger.logInfo("Refreshing subscription data")
-
-        launch { loadCurrentSubscription() }
-        launch { loadAvailableProducts() }
-        launch { loadEntitlements() }
-
-        _currentSubscription.value?.let {
-            launch { loadBillingHistory() }
-        }
-    }
-
-    /**
-     * Gets the product for upgrade from current subscription
-     */
-    fun getUpgradeProduct(): SubscriptionProductDto? {
-        val current = _currentSubscription.value
-        return if (current != null) {
-            _availableProducts.value.find { product ->
-                isUpgrade(current.productId, product.productId)
-            }
-        } else {
-            null
-        }
-    }
-
-    /**
-     * Checks if user has a specific entitlement
-     */
-    fun hasEntitlement(entitlementKey: String): Boolean {
-        return _entitlements.value[entitlementKey] == true
-    }
-
-    /**
-     * Gets savings amount for yearly vs monthly plans
-     */
-    fun getYearlySavings(yearlyProductId: String, monthlyProductId: String): String? {
-        val products = _availableProducts.value
-        val yearly = products.find { it.productId == yearlyProductId }
-        val monthly = products.find { it.productId == monthlyProductId }
-
-        return if (yearly != null && monthly != null) {
-            // This would need actual price parsing - simplified for example
-            val yearlyPrice = parsePrice(yearly.price)
-            val monthlyPrice = parsePrice(monthly.price) * 12
-
-            if (yearlyPrice != null && monthlyPrice != null && monthlyPrice > yearlyPrice) {
-                val savings = monthlyPrice - yearlyPrice
-                val percentage = ((savings / monthlyPrice) * 100).toInt()
-                "Save $percentage% with yearly plan"
-            } else {
-                null
-            }
-        } else {
-            null
-        }
-    }
-
-    // Helper functions
     private fun getDisplayName(productId: String): String {
         return when {
-            productId.contains("premium", ignoreCase = true) && productId.contains("yearly", ignoreCase = true) ->
-                "Premium Yearly"
-            productId.contains("premium", ignoreCase = true) && productId.contains("monthly", ignoreCase = true) ->
-                "Premium Monthly"
-            productId.contains("pro", ignoreCase = true) && productId.contains("yearly", ignoreCase = true) ->
-                "Pro Yearly"
-            productId.contains("pro", ignoreCase = true) && productId.contains("monthly", ignoreCase = true) ->
-                "Pro Monthly"
-            else -> productId.replaceFirstChar { it.uppercase() }
+            productId.contains("monthly") -> "Monthly Subscription"
+            productId.contains("yearly") -> "Yearly Subscription"
+            productId.contains("premium") -> "Premium Subscription"
+            else -> "Subscription"
         }
     }
 
+    /**
+     * Gets display string for subscription status
+     */
     private fun getStatusDisplay(status: SubscriptionStatus): String {
         return when (status) {
             SubscriptionStatus.ACTIVE -> "Active"
@@ -437,41 +413,13 @@ class SubscriptionViewModel(
         }
     }
 
-    private fun isUpgrade(currentProductId: String, targetProductId: String): Boolean {
-        // Simplified upgrade logic - Pro is upgrade from Premium, Yearly is upgrade from Monthly
-        val currentTier = when {
-            currentProductId.contains("pro", ignoreCase = true) -> 2
-            currentProductId.contains("premium", ignoreCase = true) -> 1
-            else -> 0
-        }
-
-        val targetTier = when {
-            targetProductId.contains("pro", ignoreCase = true) -> 2
-            targetProductId.contains("premium", ignoreCase = true) -> 1
-            else -> 0
-        }
-
-        val currentPeriod = if (currentProductId.contains("yearly", ignoreCase = true)) 2 else 1
-        val targetPeriod = if (targetProductId.contains("yearly", ignoreCase = true)) 2 else 1
-
-        return targetTier > currentTier || (targetTier == currentTier && targetPeriod > currentPeriod)
-    }
-
-    private fun parsePrice(priceString: String): Double? {
-        return try {
-            priceString.replace("[^0-9.]".toRegex(), "").toDoubleOrNull()
-        } catch (e: Exception) {
-            null
-        }
-    }
 }
 
 /**
- * Purchase status sealed class for UI state management
+ * Represents the status of a purchase operation
  */
 sealed class PurchaseStatus {
     object Processing : PurchaseStatus()
     data class Success(val message: String) : PurchaseStatus()
     data class Error(val message: String) : PurchaseStatus()
-    data class Info(val message: String) : PurchaseStatus()
 }

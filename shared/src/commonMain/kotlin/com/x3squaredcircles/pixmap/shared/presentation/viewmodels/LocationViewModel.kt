@@ -8,6 +8,7 @@ import com.x3squaredcircles.pixmap.shared.application.interfaces.services.IError
 import com.x3squaredcircles.pixmap.shared.application.interfaces.services.ILocationService
 import com.x3squaredcircles.pixmap.shared.application.queries.GetLocationByIdQuery
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
@@ -104,133 +105,119 @@ class LocationViewModel(
     /**
      * Saves the current location data
      */
-    suspend fun save() = executeSafely {
-        val command = SaveLocationCommand(
-            id = if (_id.value > 0) _id.value else null,
-            title = _title.value,
-            description = _description.value,
-            latitude = _latitude.value,
-            longitude = _longitude.value,
-            city = _city.value,
-            state = _state.value,
-            photoPath = _photo.value.takeIf { it.isNotEmpty() }
-        )
+    suspend fun save() = executeSafely(
+        operation = {
+            val command = SaveLocationCommand(
+                id = if (_id.value > 0) _id.value else null,
+                title = _title.value,
+                description = _description.value,
+                latitude = _latitude.value,
+                longitude = _longitude.value,
+                city = _city.value,
+                state = _state.value,
+                photoPath = _photo.value.takeIf { it.isNotEmpty() }
+            )
 
-        val result = mediator.send(command)
+            val result = mediator.send(command)
 
-        when {
-            result.isSuccess && result.data != null -> {
-                _id.value = result.data.id
-                _timestamp.value = result.data.timestamp
+            if (result.isSuccess && result.data != null) {
+                val locationDto = result.data!!
+                _id.value = locationDto.id
+                _timestamp.value = locationDto.timestamp
                 _isNewLocation.value = false
-            }
-            else -> {
+            } else {
                 onSystemError(result.errorMessage ?: "Failed to save location")
             }
         }
-    }
+    )
 
     /**
      * Loads a location by ID
      */
-    suspend fun loadLocation(locationId: Int) = executeSafely {
-        val query = GetLocationByIdQuery(locationId)
-        val result = mediator.send(query)
+    suspend fun loadLocation(locationId: Int) = executeSafely(
+        operation = {
+            val query = GetLocationByIdQuery(locationId)
+            val result = mediator.send(query)
 
-        when {
-            result.isSuccess && result.data != null -> {
-                val location = result.data
-                _id.value = location.id
-                _title.value = location.title
-                _description.value = location.description
-                _latitude.value = location.latitude
-                _longitude.value = location.longitude
-                _city.value = location.city
-                _state.value = location.state
-                _photo.value = location.photoPath ?: ""
-                _timestamp.value = location.timestamp
+            if (result != null) {
+                val locationDto = result
+                _id.value = locationDto.id
+                _title.value = locationDto.title
+                _description.value = locationDto.description
+                _latitude.value = locationDto.latitude
+                _longitude.value = locationDto.longitude
+                _city.value = locationDto.city
+                _state.value = locationDto.state
+                _photo.value = locationDto.photoPath ?: ""
+                _timestamp.value = locationDto.timestamp
                 _isNewLocation.value = false
-            }
-            else -> {
-                onSystemError(result.errorMessage ?: "Failed to load location with ID $locationId")
+            } else {
+                onSystemError("Failed to load location")
             }
         }
-    }
+    )
 
     /**
-     * Captures a photo using the device camera
+     * Captures a photo using the camera service
      */
-    suspend fun takePhoto() = executeSafely {
-        when {
-            !cameraService.hasPermission() -> {
-                val permissionGranted = cameraService.requestPermission()
-                if (!permissionGranted) {
-                    setValidationError("Camera permission is required")
-                    return@executeSafely
+    suspend fun capturePhoto() = executeSafely(
+        operation = {
+            val result = cameraService.capturePhoto()
+            when {
+                result.isSuccess() -> {
+                    _photo.value = result.getOrNull() ?: ""
+                }
+                else -> {
+                    setValidationError("Failed to capture photo")
                 }
             }
         }
-
-        val result = cameraService.capturePhoto()
-        when {
-            result.isSuccess -> {
-                _photo.value = result.data ?: ""
-            }
-            else -> {
-                // Try gallery as fallback
-                val galleryResult = cameraService.selectFromGallery()
-                when {
-                    galleryResult.isSuccess -> {
-                        _photo.value = galleryResult.data ?: ""
-                    }
-                    else -> {
-                        setValidationError(result.errorMessage ?: "Failed to capture photo")
-                    }
-                }
-            }
-        }
-    }
+    )
 
     /**
      * Selects a photo from gallery
      */
-    suspend fun selectPhoto() = executeSafely {
-        val result = cameraService.selectFromGallery()
-        when {
-            result.isSuccess -> {
-                _photo.value = result.data ?: ""
-            }
-            else -> {
-                setValidationError(result.errorMessage ?: "Failed to select photo")
+    suspend fun selectPhoto() = executeSafely(
+        operation = {
+            val result = cameraService.selectFromGallery()
+            when {
+                result.isSuccess() -> {
+                    _photo.value = result.getOrNull() ?: ""
+                }
+                else -> {
+                    setValidationError("Failed to select photo")
+                }
             }
         }
-    }
+    )
 
     /**
      * Starts location tracking
      */
-    suspend fun startLocationTracking() = executeSafely {
-        if (_isLocationTracking.value) return@executeSafely
+    suspend fun startLocationTracking() = executeSafely(
+        operation = {
+            if (_isLocationTracking.value) return@executeSafely
 
-        when {
-            !locationService.hasPermission() -> {
-                val permissionGranted = locationService.requestPermission()
-                if (!permissionGranted) {
-                    setValidationError("Location permission is required")
+            when {
+                !locationService.hasPermission() -> {
+                    val permissionGranted = locationService.requestPermission()
+                    if (!permissionGranted) {
+                        setValidationError("Location permission is required")
+                        return@executeSafely
+                    }
+                }
+                !locationService.isLocationEnabled() -> {
+                    setValidationError("Location services must be enabled")
                     return@executeSafely
                 }
             }
-            !locationService.isLocationEnabled() -> {
-                setValidationError("Location services must be enabled")
-                return@executeSafely
-            }
+
+            _isLocationTracking.value = true
+
+            // Get current location immediately
+            viewModelScope.launch { getCurrentLocation() }
         }
-
-        _isLocationTracking.value = true
-
-        // Get current location immediately
-        getCurrentLocation()
-    }
+    )
 
     /**
      * Stops location tracking
@@ -243,19 +230,21 @@ class LocationViewModel(
     /**
      * Gets the current location
      */
-    suspend fun getCurrentLocation() = executeSafely {
-        val result = locationService.getCurrentLocation()
-        when {
-            result.isSuccess && result.data != null -> {
-                val coordinate = result.data
-                setLatitude(coordinate.latitude)
-                setLongitude(coordinate.longitude)
-            }
-            else -> {
-                onSystemError(result.errorMessage ?: "Failed to get current location")
+    suspend fun getCurrentLocation() = executeSafely(
+        operation = {
+            val result = locationService.getCurrentLocation()
+            when {
+                result.isSuccess() && result.getOrNull() != null -> {
+                    val coordinate = result.getOrNull()!!
+                    setLatitude(coordinate.latitude)
+                    setLongitude(coordinate.longitude)
+                }
+                else -> {
+                    onSystemError("Failed to get current location")
+                }
             }
         }
-    }
+    )
 
     /**
      * Navigation lifecycle methods
