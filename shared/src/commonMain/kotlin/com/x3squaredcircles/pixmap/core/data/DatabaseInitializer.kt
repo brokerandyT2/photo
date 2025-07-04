@@ -489,7 +489,8 @@ class DatabaseInitializer(
                     // Insert camera body through database context
                     val databaseContext = (unitOfWork as? IUnitOfWorkWithContext)?.getDatabaseContext()
                     if (databaseContext != null) {
-                        databaseContext.insert(cameraBody) { /* insert function */ }
+                        databaseContext.insertAsync(cameraBody)
+
                     } else {
                         logger.warning("Failed to create camera profile ${profile.name}: DatabaseContext not available")
                     }

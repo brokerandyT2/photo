@@ -40,7 +40,7 @@ enum class LensType {
 
 @Serializable
 data class CameraBody(
-
+    override var id: Int = 0,
     val name: String,
     val sensorType: String, // "Full Frame", "Crop", "Micro Four Thirds", "Medium Format"
     val sensorWidth: Double,

@@ -1,9 +1,11 @@
 // shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/infrastructure/data/DatabaseContext.kt
 package com.x3squaredcircles.pixmap.shared.infrastructure.data
 
+import app.cash.sqldelight.db.SqlCursor
 import app.cash.sqldelight.db.SqlDriver
 import com.x3squaredcircles.pixmap.shared.application.interfaces.services.ILoggingService
 import com.x3squaredcircles.pixmap.core.data.DatabaseInitializer
+import com.x3squaredcircles.pixmap.shared.infrastructure.data.entities.LocationEntity
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.flow.Flow
@@ -13,6 +15,7 @@ import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.datetime.Clock
+import kotlin.reflect.KFunction1
 
 /**
  * SQLite database context implementation for KMM with optimized performance
@@ -172,7 +175,7 @@ class DatabaseContext(
 
     override suspend fun <T : Any> queryAsync(
         sql: String,
-        resultMapper: suspend (Any) -> T,
+        resultMapper: KFunction1<SqlCursor, LocationEntity>,
         vararg parameters: Any?
     ): List<T> {
         return withContext(Dispatchers.IO) {

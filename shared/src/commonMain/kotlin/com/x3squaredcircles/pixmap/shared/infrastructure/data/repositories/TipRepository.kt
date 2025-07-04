@@ -1,364 +1,193 @@
-// shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/infrastructure/data/repositories/TipRepository.kt
+//shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/infrastructure/data/repositories/TipRepository.kt
+package com.x3squaredcircles.pixmap.shared.infrastructure.data.repositories
 
 import com.x3squaredcircles.pixmap.shared.application.common.models.Result
+import com.x3squaredcircles.pixmap.shared.application.interfaces.repositories.ITipRepository
+import com.x3squaredcircles.pixmap.shared.application.interfaces.services.ILoggingService
 import com.x3squaredcircles.pixmap.shared.domain.entities.Tip
 import com.x3squaredcircles.pixmap.shared.infrastructure.data.IDatabaseContext
 import com.x3squaredcircles.pixmap.shared.infrastructure.data.entities.TipEntity
 import com.x3squaredcircles.pixmap.shared.infrastructure.services.IInfrastructureExceptionMappingService
-import kotlinx.coroutines.logging.Logger
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
 
+/**
+ * Repository implementation for tip management
+ */
 class TipRepository(
     private val context: IDatabaseContext,
-    private val logger: Logger,
+    private val logger: ILoggingService,
     private val exceptionMapper: IInfrastructureExceptionMappingService
-) {
+) : ITipRepository {
 
-    // Query cache for frequently used queries
-    private val queryCache = mapOf(
-        "GetTipById" to "SELECT * FROM TipEntity WHERE Id = ? LIMIT 1",
-        "GetAllTips" to "SELECT * FROM TipEntity ORDER BY Title",
-        "GetTipsByTipType" to "SELECT * FROM TipEntity WHERE TipTypeId = ? ORDER BY Title",
-        "GetTipByTitle" to "SELECT * FROM TipEntity WHERE Title = ? LIMIT 1",
-        "GetRandomTipByType" to "SELECT * FROM TipEntity WHERE TipTypeId = ? ORDER BY RANDOM() LIMIT 1",
-        "CheckTipExists" to "SELECT EXISTS(SELECT 1 FROM TipEntity WHERE Id = ?)",
-        "GetTipsByFstop" to "SELECT * FROM TipEntity WHERE Fstop = ? ORDER BY Title",
-        "GetTipsByIso" to "SELECT * FROM TipEntity WHERE Iso = ? ORDER BY Title"
-    )
-
-    suspend fun getByIdAsync(id: Int): Tip? {
+    override suspend fun getByIdAsync(id: Int): Result<Tip?> {
         return try {
-            val entity = context.getAsync(id) { primaryKey ->
-                queryTipById(primaryKey as Int)
-            }
-            entity?.let { mapEntityToDomain(it) }
+            logger.logInfo("Getting tip by ID: $id")
+
+            val entities = context.queryAsync<TipEntity>(
+                "SELECT * FROM TipEntity WHERE id = ? LIMIT 1",
+                ::mapCursorToTipEntity,
+                id
+            )
+
+            val result = entities.firstOrNull()?.let { mapEntityToDomain(it) }
+            logger.logInfo("Found tip: ${result?.id ?: "none"}")
+            Result.success(result)
         } catch (ex: Exception) {
-            logger.error("Failed to get tip by id $id", ex)
-            throw exceptionMapper.mapToTipDomainException(ex, "GetById")
+            logger.logError("Failed to get tip by ID: $id", ex)
+            Result.failure(exceptionMapper.mapToTipDomainException(ex, "GetById").message ?: "Tip operation failed")
         }
     }
 
-    suspend fun getAllAsync(): List<Tip> {
+    override suspend fun getAllAsync(): Result<List<Tip>> {
         return try {
-            val entities = context.queryAsync(
-                queryCache["GetAllTips"]!!,
+            logger.logInfo("Getting all tips")
+
+            val entities = context.queryAsync<TipEntity>(
+                "SELECT * FROM TipEntity ORDER BY title",
                 ::mapCursorToTipEntity
             )
-            entities.map { mapEntityToDomain(it) }
+
+            val result = entities.map { mapEntityToDomain(it) }
+            logger.logInfo("Found ${result.size} tips")
+            Result.success(result)
         } catch (ex: Exception) {
-            logger.error("Failed to get all tips", ex)
-            throw exceptionMapper.mapToTipDomainException(ex, "GetAll")
+            logger.logError("Failed to get all tips", ex)
+            Result.failure(exceptionMapper.mapToTipDomainException(ex, "GetAll").message ?: "Tip operation failed")
         }
     }
 
-    suspend fun getByTipTypeIdAsync(tipTypeId: Int): List<Tip> {
+    override suspend fun getByTypeAsync(tipTypeId: Int): Result<List<Tip>> {
         return try {
-            val entities = context.queryAsync(
-                queryCache["GetTipsByTipType"]!!,
+            logger.logInfo("Getting tips by type: $tipTypeId")
+
+            val entities = context.queryAsync<TipEntity>(
+                "SELECT * FROM TipEntity WHERE tipTypeId = ? ORDER BY title",
                 ::mapCursorToTipEntity,
                 tipTypeId
             )
-            entities.map { mapEntityToDomain(it) }
+
+            val result = entities.map { mapEntityToDomain(it) }
+            logger.logInfo("Found ${result.size} tips for type: $tipTypeId")
+            Result.success(result)
         } catch (ex: Exception) {
-            logger.error("Failed to get tips by tip type id $tipTypeId", ex)
-            throw exceptionMapper.mapToTipDomainException(ex, "GetByTipTypeId")
+            logger.logError("Failed to get tips by type: $tipTypeId", ex)
+            Result.failure(exceptionMapper.mapToTipDomainException(ex, "GetByType").message ?: "Tip operation failed")
         }
     }
 
-    suspend fun addAsync(tip: Tip): Tip {
+    override suspend fun createAsync(tip: Tip): Result<Tip> {
         return try {
-            val entity = mapDomainToEntity(tip)
-            val id = context.insertAsync(entity) { tipEntity ->
-                insertTip(tipEntity)
-            }
+            logger.logInfo("Creating tip: ${tip.title}")
 
-            val createdTip = tip.copy(id = id, timestamp = entity.timestamp)
-            logger.info("Created tip with ID $id")
-            createdTip
+            val entity = mapDomainToEntity(tip)
+            val id = context.insertAsync(entity)
+
+            val createdTip = createTipWithId(tip, id.toInt())
+            logger.logInfo("Successfully created tip with ID: $id")
+            Result.success(createdTip)
         } catch (ex: Exception) {
-            logger.error("Failed to add tip", ex)
-            throw exceptionMapper.mapToTipDomainException(ex, "Add")
+            logger.logError("Failed to create tip: ${tip.title}", ex)
+            Result.failure(exceptionMapper.mapToTipDomainException(ex, "Create").message ?: "Tip operation failed")
         }
     }
 
-    suspend fun updateAsync(tip: Tip): Tip {
+    override suspend fun updateAsync(tip: Tip): Result<Tip> {
         return try {
+            logger.logInfo("Updating tip: ${tip.id}")
+
             val entity = mapDomainToEntity(tip)
-            val rowsAffected = context.updateAsync(entity) { tipEntity ->
-                updateTip(tipEntity)
-            }
+            val rowsAffected = context.executeAsync(
+                """UPDATE TipEntity 
+                   SET tipTypeId = ?, title = ?, content = ?, fstop = ?, 
+                       shutterSpeed = ?, iso = ?, i8n = ?
+                   WHERE id = ?""",
+                entity.tipTypeId,
+                entity.title,
+                entity.content,
+                entity.fstop ?: "",
+                entity.shutterSpeed ?: "",
+                entity.iso ?: "",
+                entity.i8n ?: "en-US",
+                entity.id
+            )
 
             if (rowsAffected == 0) {
-                throw IllegalArgumentException("Tip with ID ${tip.id} not found")
+                return Result.failure("Tip not found")
             }
 
-            logger.info("Updated tip with ID ${tip.id}")
-            tip
+            logger.logInfo("Successfully updated tip: ${tip.id}")
+            Result.success(tip)
         } catch (ex: Exception) {
-            logger.error("Failed to update tip with id ${tip.id}", ex)
-            throw exceptionMapper.mapToTipDomainException(ex, "Update")
+            logger.logError("Failed to update tip: ${tip.id}", ex)
+            Result.failure(exceptionMapper.mapToTipDomainException(ex, "Update").message ?: "Tip operation failed")
         }
     }
 
-    suspend fun deleteAsync(tip: Tip) {
-        try {
-            val entity = mapDomainToEntity(tip)
-            context.deleteAsync(entity) { tipEntity ->
-                deleteTip(tipEntity)
-            }
-            logger.info("Deleted tip with ID ${tip.id}")
-        } catch (ex: Exception) {
-            logger.error("Failed to delete tip with id ${tip.id}", ex)
-            throw exceptionMapper.mapToTipDomainException(ex, "Delete")
-        }
-    }
-
-    suspend fun deleteByIdAsync(id: Int): Boolean {
+    override suspend fun deleteAsync(id: Int): Result<Boolean> {
         return try {
+            logger.logInfo("Deleting tip: $id")
+
             val rowsAffected = context.executeAsync(
-                "DELETE FROM TipEntity WHERE Id = ?",
+                "DELETE FROM TipEntity WHERE id = ?",
                 id
             )
 
-            if (rowsAffected > 0) {
-                logger.info("Deleted tip with ID $id")
-            }
-
-            rowsAffected > 0
+            val deleted = rowsAffected > 0
+            logger.logInfo("Tip deletion result for ID $id: $deleted")
+            Result.success(deleted)
         } catch (ex: Exception) {
-            logger.error("Failed to delete tip with id $id", ex)
-            throw exceptionMapper.mapToTipDomainException(ex, "DeleteById")
+            logger.logError("Failed to delete tip: $id", ex)
+            Result.failure(exceptionMapper.mapToTipDomainException(ex, "Delete").message ?: "Tip operation failed")
         }
     }
 
-    suspend fun getByTitleAsync(title: String): Tip? {
+    override suspend fun getRandomByTypeAsync(tipTypeId: Int): Result<Tip?> {
         return try {
-            val entities = context.queryAsync(
-                queryCache["GetTipByTitle"]!!,
-                ::mapCursorToTipEntity,
-                title
-            )
-            entities.firstOrNull()?.let { mapEntityToDomain(it) }
-        } catch (ex: Exception) {
-            logger.error("Failed to get tip by title '$title'", ex)
-            throw exceptionMapper.mapToTipDomainException(ex, "GetByTitle")
-        }
-    }
+            logger.logInfo("Getting random tip by type: $tipTypeId")
 
-    suspend fun getRandomByTypeAsync(tipTypeId: Int): Tip? {
-        return try {
-            val entities = context.queryAsync(
-                queryCache["GetRandomTipByType"]!!,
+            val entities = context.queryAsync<TipEntity>(
+                "SELECT * FROM TipEntity WHERE tipTypeId = ? ORDER BY RANDOM() LIMIT 1",
                 ::mapCursorToTipEntity,
                 tipTypeId
             )
-            entities.firstOrNull()?.let { mapEntityToDomain(it) }
+
+            val result = entities.firstOrNull()?.let { mapEntityToDomain(it) }
+            logger.logInfo("Found random tip: ${result?.id ?: "none"} for type: $tipTypeId")
+            Result.success(result)
         } catch (ex: Exception) {
-            logger.error("Failed to get random tip by type $tipTypeId", ex)
-            throw exceptionMapper.mapToTipDomainException(ex, "GetRandomByType")
+            logger.logError("Failed to get random tip by type: $tipTypeId", ex)
+            Result.failure(exceptionMapper.mapToTipDomainException(ex, "GetRandomByType").message ?: "Tip operation failed")
         }
     }
 
-    suspend fun existsAsync(id: Int): Boolean {
-        return try {
-            val count = context.executeScalarAsync<Long>(
-                queryCache["CheckTipExists"]!!,
-                id
-            ) ?: 0
-            count > 0
-        } catch (ex: Exception) {
-            logger.error("Failed to check if tip exists with id $id", ex)
-            throw exceptionMapper.mapToTipDomainException(ex, "Exists")
-        }
-    }
-
-    suspend fun getByFstopAsync(fstop: String): List<Tip> {
-        return try {
-            val entities = context.queryAsync(
-                queryCache["GetTipsByFstop"]!!,
-                ::mapCursorToTipEntity,
-                fstop
-            )
-            entities.map { mapEntityToDomain(it) }
-        } catch (ex: Exception) {
-            logger.error("Failed to get tips by f-stop '$fstop'", ex)
-            throw exceptionMapper.mapToTipDomainException(ex, "GetByFstop")
-        }
-    }
-
-    suspend fun getByIsoAsync(iso: String): List<Tip> {
-        return try {
-            val entities = context.queryAsync(
-                queryCache["GetTipsByIso"]!!,
-                ::mapCursorToTipEntity,
-                iso
-            )
-            entities.map { mapEntityToDomain(it) }
-        } catch (ex: Exception) {
-            logger.error("Failed to get tips by ISO '$iso'", ex)
-            throw exceptionMapper.mapToTipDomainException(ex, "GetByIso")
-        }
-    }
-
-    suspend fun createBulkAsync(tips: List<Tip>): List<Tip> {
-        return try {
-            context.executeInTransactionAsync {
-                val createdTips = mutableListOf<Tip>()
-
-                tips.chunked(50).forEach { batch ->
-                    batch.forEach { tip ->
-                        val createdTip = addAsync(tip)
-                        createdTips.add(createdTip)
-                    }
-                }
-
-                logger.info("Bulk created ${tips.size} tips")
-                createdTips
-            }
-        } catch (ex: Exception) {
-            logger.error("Failed to bulk create tips", ex)
-            throw exceptionMapper.mapToTipDomainException(ex, "CreateBulk")
-        }
-    }
-
-    suspend fun updateBulkAsync(tips: List<Tip>): Int {
-        return try {
-            context.executeInTransactionAsync {
-                var totalUpdated = 0
-
-                tips.chunked(50).forEach { batch ->
-                    batch.forEach { tip ->
-                        val entity = mapDomainToEntity(tip)
-                        val rowsAffected = updateTip(entity)
-                        totalUpdated += rowsAffected
-                    }
-                }
-
-                logger.info("Bulk updated $totalUpdated tips")
-                totalUpdated
-            }
-        } catch (ex: Exception) {
-            logger.error("Failed to bulk update tips", ex)
-            throw exceptionMapper.mapToTipDomainException(ex, "UpdateBulk")
-        }
-    }
-
-    suspend fun deleteBulkAsync(tipIds: List<Int>): Int {
-        return try {
-            if (tipIds.isEmpty()) return 0
-
-            var totalDeleted = 0
-            val batchSize = 100
-
-            tipIds.chunked(batchSize).forEach { batch ->
-                val placeholders = batch.joinToString(",") { "?" }
-                val sql = "DELETE FROM TipEntity WHERE Id IN ($placeholders)"
-
-                val deleted = context.executeAsync(sql, *batch.toTypedArray())
-                totalDeleted += deleted
-            }
-
-            logger.info("Bulk deleted $totalDeleted tips")
-            totalDeleted
-        } catch (ex: Exception) {
-            logger.error("Failed to bulk delete tips", ex)
-            throw exceptionMapper.mapToTipDomainException(ex, "DeleteBulk")
-        }
-    }
-
-    suspend fun countByTipTypeAsync(tipTypeId: Int): Int {
-        return try {
-            val count = context.executeScalarAsync<Long>(
-                "SELECT COUNT(*) FROM TipEntity WHERE TipTypeId = ?",
-                tipTypeId
-            )?.toInt() ?: 0
-
-            count
-        } catch (ex: Exception) {
-            logger.error("Failed to count tips by tip type $tipTypeId", ex)
-            throw exceptionMapper.mapToTipDomainException(ex, "CountByTipType")
-        }
-    }
-
-    suspend fun searchByContentAsync(searchTerm: String): List<Tip> {
-        return try {
-            val searchPattern = "%$searchTerm%"
-            val entities = context.queryAsync(
-                "SELECT * FROM TipEntity WHERE Title LIKE ? OR Content LIKE ? ORDER BY Title",
-                ::mapCursorToTipEntity,
-                searchPattern,
-                searchPattern
-            )
-            entities.map { mapEntityToDomain(it) }
-        } catch (ex: Exception) {
-            logger.error("Failed to search tips by content '$searchTerm'", ex)
-            throw exceptionMapper.mapToTipDomainException(ex, "SearchByContent")
-        }
-    }
-
-    // Helper methods for database operations
-    private suspend fun queryTipById(id: Int): TipEntity? {
-        val entities = context.queryAsync(
-            queryCache["GetTipById"]!!,
-            ::mapCursorToTipEntity,
-            id
+    private fun createTipWithId(originalTip: Tip, id: Int): Tip {
+        val newTip = Tip(
+            tipTypeId = originalTip.tipTypeId,
+            title = originalTip.title,
+            content = originalTip.content,
+            fstop = originalTip.fstop,
+            shutterSpeed = originalTip.shutterSpeed,
+            iso = originalTip.iso,
+            i8n = originalTip.i8n
         )
-        return entities.firstOrNull()
+        setIdUsingReflection(newTip, originalTip.id)
+
+        return newTip
     }
 
-    private suspend fun insertTip(entity: TipEntity): Long {
-        return context.executeAsync(
-            """INSERT INTO TipEntity (TipTypeId, Title, Content, Fstop, ShutterSpeed, Iso, I8n, Timestamp)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            entity.tipTypeId,
-            entity.title,
-            entity.content,
-            entity.fstop ?: "",
-            entity.shutterSpeed ?: "",
-            entity.iso ?: "",
-            entity.i8n ?: "",
-            entity.timestamp.toString()
-        ).toLong()
-    }
-
-    private suspend fun updateTip(entity: TipEntity): Int {
-        return context.executeAsync(
-            """UPDATE TipEntity 
-               SET TipTypeId = ?, Title = ?, Content = ?, Fstop = ?, ShutterSpeed = ?, Iso = ?, I8n = ?, Timestamp = ?
-               WHERE Id = ?""",
-            entity.tipTypeId,
-            entity.title,
-            entity.content,
-            entity.fstop ?: "",
-            entity.shutterSpeed ?: "",
-            entity.iso ?: "",
-            entity.i8n ?: "",
-            entity.timestamp.toString(),
-            entity.id
-        )
-    }
-
-    private suspend fun deleteTip(entity: TipEntity): Int {
-        return context.executeAsync(
-            "DELETE FROM TipEntity WHERE Id = ?",
-            entity.id
-        )
-    }
-
-    // Mapping functions
     private fun mapEntityToDomain(entity: TipEntity): Tip {
-        return Tip(
-            id = entity.id,
+        val tip = Tip(
             tipTypeId = entity.tipTypeId,
             title = entity.title,
             content = entity.content,
-            fstop = entity.fstop,
-            shutterSpeed = entity.shutterSpeed,
-            iso = entity.iso,
-            i8n = entity.i8n,
-            timestamp = entity.timestamp
+            fstop = entity.fstop ?: "",
+            shutterSpeed = entity.shutterSpeed ?: "",
+            iso = entity.iso ?: "",
+            i8n = entity.i8n ?: "en-US"
         )
+        setIdUsingReflection(tip, entity.id)
+        return tip
     }
 
     private fun mapDomainToEntity(tip: Tip): TipEntity {
@@ -367,40 +196,32 @@ class TipRepository(
             tipTypeId = tip.tipTypeId,
             title = tip.title,
             content = tip.content,
-            fstop = tip.fstop,
-            shutterSpeed = tip.shutterSpeed,
-            iso = tip.iso,
-            i8n = tip.i8n,
-            timestamp = tip.timestamp
+            fstop = tip.fstop.ifBlank { null }?: "",
+            shutterSpeed = tip.shutterSpeed.ifBlank { null }?: "",
+            iso = tip.iso.ifBlank { null }?: "",
+            i8n = tip.i8n.ifBlank { "en-US" }
         )
     }
 
-    private fun mapCursorToTipEntity(cursor: SqlCursor): TipEntity {
+    private fun mapCursorToTipEntity(cursor: app.cash.sqldelight.db.SqlCursor): TipEntity {
         return TipEntity(
-            id = cursor.getInt(0) ?: 0,
-            tipTypeId = cursor.getInt(1) ?: 0,
+            id = cursor.getLong(0)?.toInt() ?: 0,
+            tipTypeId = cursor.getLong(1)?.toInt() ?: 0,
             title = cursor.getString(2) ?: "",
             content = cursor.getString(3) ?: "",
-            fstop = cursor.getString(4),
-            shutterSpeed = cursor.getString(5),
-            iso = cursor.getString(6),
-            i8n = cursor.getString(7),
-            timestamp = Instant.parse(cursor.getString(8) ?: Clock.System.now().toString())
+            fstop = cursor.getString(4)?: "",
+            shutterSpeed = cursor.getString(5)?: "",
+            iso = cursor.getString(6)?: "",
+            i8n = cursor.getString(7)?: ""
         )
     }
+    private fun setIdUsingReflection(tip: Tip, id: Int) {
+        try {
+            val idField = tip::class.java.getDeclaredField("id")
+            idField.isAccessible = true
+            idField.setInt(tip, id)
+        } catch (e: Exception) {
+            logger.logWarning("Could not set ID via reflection: ${e.message}")
+        }
+    }
 }
-
-// Tip entity data class
-data class TipEntity(
-    val id: Int = 0,
-    val tipTypeId: Int,
-    val title: String,
-    val content: String,
-    val fstop: String? = null,
-    val shutterSpeed: String? = null,
-    val iso: String? = null,
-    val i8n: String? = null,
-    val timestamp: Instant = Clock.System.now()
-)
-
-// SqlCursor interface for database queries

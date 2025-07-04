@@ -1,7 +1,10 @@
 // shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/infrastructure/data/IDatabaseContext.kt
 package com.x3squaredcircles.pixmap.shared.infrastructure.data
 
+import app.cash.sqldelight.db.SqlCursor
+import com.x3squaredcircles.pixmap.shared.infrastructure.data.entities.LocationEntity
 import kotlinx.coroutines.flow.Flow
+import kotlin.reflect.KFunction1
 
 /**
  * Database context interface for SQLite operations with KMM support
@@ -52,7 +55,7 @@ interface IDatabaseContext {
      */
     suspend fun <T : Any> queryAsync(
         sql: String,
-        resultMapper: suspend (Any) -> T,
+        resultMapper: KFunction1<SqlCursor, T>,
         vararg parameters: Any?
     ): List<T>
 

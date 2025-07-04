@@ -1,4 +1,4 @@
-// shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/infrastructure/data/repositories/LocationRepository.kt
+//shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/infrastructure/data/repositories/LocationRepository.kt
 package com.x3squaredcircles.pixmap.shared.infrastructure.data.repositories
 
 import com.x3squaredcircles.pixmap.shared.application.common.models.PagedList
@@ -23,7 +23,7 @@ class LocationRepository(
 
     override suspend fun getByIdAsync(id: Int): Result<Location?> {
         return try {
-            val locationEntity = context.queryAsync(
+            val locationEntity = context.queryAsync<LocationEntity>(
                 "SELECT * FROM LocationEntity WHERE id = ?",
                 ::mapCursorToLocationEntity,
                 id
@@ -39,7 +39,7 @@ class LocationRepository(
 
     override suspend fun getAllAsync(): Result<List<Location>> {
         return try {
-            val entities = context.queryAsync(
+            val entities = context.queryAsync<LocationEntity>(
                 "SELECT * FROM LocationEntity ORDER BY timestamp DESC",
                 ::mapCursorToLocationEntity
             )
@@ -53,7 +53,7 @@ class LocationRepository(
 
     override suspend fun getActiveAsync(): Result<List<Location>> {
         return try {
-            val entities = context.queryAsync(
+            val entities = context.queryAsync<LocationEntity>(
                 "SELECT * FROM LocationEntity WHERE isDeleted = 0 ORDER BY timestamp DESC",
                 ::mapCursorToLocationEntity
             )
@@ -70,7 +70,6 @@ class LocationRepository(
             val entity = mapDomainToEntity(location)
             val id = context.insertAsync(entity)
 
-            // Create a new location with the generated ID
             val createdLocation = createLocationWithId(location, id.toInt())
             Result.success(createdLocation)
         } catch (ex: Exception) {
@@ -82,7 +81,7 @@ class LocationRepository(
     override suspend fun updateAsync(location: Location): Result<Location> {
         return try {
             val entity = mapDomainToEntity(location)
-            val rowsAffected = context.executeNonQuery(
+            val rowsAffected = context.executeAsync(
                 """UPDATE LocationEntity 
                    SET title = ?, description = ?, latitude = ?, longitude = ?, 
                        city = ?, state = ?, photoPath = ?, isDeleted = ?, timestamp = ?
@@ -112,7 +111,7 @@ class LocationRepository(
 
     override suspend fun deleteAsync(id: Int): Result<Boolean> {
         return try {
-            val rowsAffected = context.executeNonQuery(
+            val rowsAffected = context.executeAsync(
                 "UPDATE LocationEntity SET isDeleted = 1 WHERE id = ?",
                 id
             )
@@ -129,7 +128,7 @@ class LocationRepository(
         distanceKm: Double
     ): Result<List<Location>> {
         return try {
-            val entities = context.queryAsync(
+            val entities = context.queryAsync<LocationEntity>(
                 "SELECT * FROM LocationEntity WHERE isDeleted = 0",
                 ::mapCursorToLocationEntity
             )
@@ -172,14 +171,12 @@ class LocationRepository(
                 parameters.add(searchPattern)
             }
 
-            // Get total count
             val totalCount = context.countAsync(
                 "SELECT COUNT(*) FROM LocationEntity" + if (whereClause.isNotEmpty()) " WHERE $whereClause" else "",
                 *parameters.toTypedArray()
             )
 
-            // Get paged results
-            val entities = context.queryAsync(
+            val entities = context.queryAsync<LocationEntity>(
                 "SELECT * FROM LocationEntity" +
                         if (whereClause.isNotEmpty()) " WHERE $whereClause" else "" +
                                 " ORDER BY timestamp DESC LIMIT ? OFFSET ?",
@@ -193,13 +190,11 @@ class LocationRepository(
             val totalPages = ((totalCount + pageSize - 1) / pageSize).toInt()
 
             val pagedList = PagedList(
-                data = locations,
+                 items=locations ,
                 pageNumber = pageNumber,
                 pageSize = pageSize,
                 totalCount = totalCount.toInt(),
-                totalPages = totalPages,
-                hasPreviousPage = pageNumber > 1,
-                hasNextPage = pageNumber < totalPages
+
             )
 
             Result.success(pagedList)
@@ -211,7 +206,7 @@ class LocationRepository(
 
     override suspend fun getByTitleAsync(title: String): Result<Location?> {
         return try {
-            val entity = context.queryAsync(
+            val entity = context.queryAsync<LocationEntity>(
                 "SELECT * FROM LocationEntity WHERE title = ? AND isDeleted = 0",
                 ::mapCursorToLocationEntity,
                 title
@@ -225,7 +220,7 @@ class LocationRepository(
         }
     }
 
-    override suspend fun countAsync(): Result<Int> {
+    suspend fun countAsync(): Result<Int> {
         return try {
             val count = context.countAsync(
                 "SELECT COUNT(*) FROM LocationEntity WHERE isDeleted = 0"
@@ -237,7 +232,7 @@ class LocationRepository(
         }
     }
 
-    override suspend fun existsAsync(id: Int): Result<Boolean> {
+    suspend fun existsAsync(id: Int): Result<Boolean> {
         return try {
             val count = context.countAsync(
                 "SELECT COUNT(*) FROM LocationEntity WHERE id = ?",
@@ -250,16 +245,33 @@ class LocationRepository(
         }
     }
 
-    // Private mapping methods
+    private fun createLocationWithId(location: Location, id: Int): Location {
+        val newLocation = Location(location.title, location.description, location.coordinate, location.address)
+        newLocation.setId(id)
+        newLocation.setTimestamp(Clock.System.now())
+        location.photoPath?.let { newLocation.setPhotoPath(it) }
+        return newLocation
+    }
+
+    private fun calculateDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+        val earthRadiusKm = 6371.0
+        val dLat = (lat2 - lat1) * PI / 180.0
+        val dLon = (lon2 - lon1) * PI / 180.0
+        val a = sin(dLat / 2) * sin(dLat / 2) +
+                cos(lat1 * PI / 180.0) * cos(lat2 * PI / 180.0) *
+                sin(dLon / 2) * sin(dLon / 2)
+        val c = 2 * atan2(sqrt(a), sqrt(1 - a))
+        return earthRadiusKm * c
+    }
+
     private fun mapEntityToDomain(entity: LocationEntity): Location {
         val coordinate = Coordinate(entity.latitude, entity.longitude)
         val address = Address(entity.city ?: "", entity.state ?: "")
 
         val location = Location(entity.title, entity.description ?: "", coordinate, address)
 
-        // Set internal properties using the internal methods
         location.setId(entity.id)
-        location.setTimestamp(entity.timestamp)
+        location.setTimestamp(Instant.fromEpochSeconds(entity.timestamp))
         location.setDeleted(entity.isDeleted)
         entity.photoPath?.let { location.setPhotoPath(it) }
 
@@ -285,43 +297,14 @@ class LocationRepository(
         return LocationEntity(
             id = cursor.getLong(0)?.toInt() ?: 0,
             title = cursor.getString(1) ?: "",
-            description = cursor.getString(2),
+            description = cursor.getString(2) ?: "",
             latitude = cursor.getDouble(3) ?: 0.0,
             longitude = cursor.getDouble(4) ?: 0.0,
-            city = cursor.getString(5),
-            state = cursor.getString(6),
+            city = cursor.getString(5) ?: "",
+            state = cursor.getString(6) ?: "",
             photoPath = cursor.getString(7),
-            isDeleted = (cursor.getLong(8) ?: 0L) != 0L,
-            timestamp = cursor.getLong(9) ?: Clock.System.now().epochSeconds
+            isDeleted = cursor.getLong(8) == 1L,
+            timestamp = cursor.getLong(9) ?: 0L
         )
     }
-
-    // Helper method to create a location with the generated ID
-    private fun createLocationWithId(originalLocation: Location, id: Int): Location {
-        val location = Location(
-            originalLocation.title,
-            originalLocation.description,
-            originalLocation.coordinate,
-            originalLocation.address
-        )
-
-        location.setId(id)
-        location.setTimestamp(originalLocation.timestamp)
-        location.setDeleted(originalLocation.isDeleted)
-        originalLocation.photoPath?.let { location.setPhotoPath(it) }
-
-        return location
     }
-
-    // Distance calculation using Haversine formula
-    private fun calculateDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
-        val earthRadiusKm = 6371.0
-        val dLat = (lat2 - lat1) * PI / 180.0
-        val dLon = (lon2 - lon1) * PI / 180.0
-        val a = sin(dLat / 2) * sin(dLat / 2) +
-                cos(lat1 * PI / 180.0) * cos(lat2 * PI / 180.0) *
-                sin(dLon / 2) * sin(dLon / 2)
-        val c = 2 * atan2(sqrt(a), sqrt(1 - a))
-        return earthRadiusKm * c
-    }
-}

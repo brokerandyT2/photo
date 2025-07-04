@@ -10,6 +10,7 @@ import com.x3squaredcircles.pixmap.shared.domain.exceptions.SubscriptionDomainEx
 import com.x3squaredcircles.pixmap.shared.infrastructure.data.IDatabaseContext
 import com.x3squaredcircles.pixmap.shared.infrastructure.data.entities.SubscriptionEntity
 import com.x3squaredcircles.pixmap.shared.infrastructure.services.IInfrastructureExceptionMappingService
+import com.x3squaredcircles.pixmap.shared.infrastructure.services.mapToSubscriptionDomainException
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
 
@@ -23,83 +24,74 @@ class SubscriptionRepositoryImpl(
 ) : ISubscriptionRepository {
 
     override suspend fun createAsync(subscription: Subscription): Result<Subscription> {
-        return executeWithExceptionMapping("CreateSubscription") {
+        return try {
             logger.logInfo("Creating subscription for user: ${subscription.userId}")
 
-            val entity = subscription.toEntity()
-            entity.timestamp = Clock.System.now().epochSeconds
+            val entity = mapDomainToEntity(subscription)
+            val id = context.insertAsync(entity)
 
-            val connection = context.getConnection()
-            val insertedId = connection.insertOrThrow(
-                "INSERT INTO Subscription (userId, productId, transactionId, purchaseToken, status, startDate, expirationDate, autoRenewing, lastVerified, cancelledAt, renewalCount, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                entity.userId,
-                entity.productId,
-                entity.transactionId,
-                entity.purchaseToken,
-                entity.status,
-                entity.startDate,
-                entity.expirationDate,
-                if (entity.autoRenewing) 1 else 0,
-                entity.lastVerified,
-                entity.cancelledAt,
-                entity.renewalCount,
-                entity.timestamp
-            )
-
-            val createdEntity = entity.copy(id = insertedId.toInt())
-            val result = createdEntity.toDomain()
-
-            logger.logInfo("Successfully created subscription with ID: ${result.id}")
-            result
+            val createdSubscription = createSubscriptionWithId(subscription, id.toInt())
+            logger.logInfo("Successfully created subscription with ID: $id")
+            Result.success(createdSubscription)
+        } catch (ex: Exception) {
+            logger.logError("Failed to create subscription", ex)
+            Result.failure(exceptionMapper.mapToSubscriptionDomainException(ex, "CreateSubscription").message ?: "Subscription operation failed")
         }
     }
 
     override suspend fun getActiveSubscriptionAsync(userId: String): Result<Subscription?> {
-        return executeWithExceptionMapping("GetActiveSubscription") {
+        return try {
             logger.logInfo("Getting active subscription for user: $userId")
 
-            val connection = context.getConnection()
-            val entities = connection.queryList(
-                "SELECT * FROM Subscription WHERE userId = ? AND status = ? AND expirationDate > ? ORDER BY expirationDate DESC LIMIT 1",
-                SubscriptionEntity::class,
+            val entities = context.queryAsync<SubscriptionEntity>(
+                """SELECT * FROM Subscription 
+                   WHERE userId = ? AND status = ? AND expirationDate > ? 
+                   ORDER BY expirationDate DESC LIMIT 1""",
+                ::mapCursorToSubscriptionEntity,
                 userId,
                 SubscriptionStatus.ACTIVE.name,
                 Clock.System.now().epochSeconds
             )
 
-            val result = entities.firstOrNull()?.toDomain()
+            val result = entities.firstOrNull()?.let { mapEntityToDomain(it) }
             logger.logInfo("Found active subscription: ${result?.id ?: "none"} for user: $userId")
-            result
+            Result.success(result)
+        } catch (ex: Exception) {
+            logger.logError("Failed to get active subscription for user: $userId", ex)
+            Result.failure(exceptionMapper.mapToSubscriptionDomainException(ex, "CreateSubscription").message ?: "Subscription operation failed")
         }
     }
 
     override suspend fun getByTransactionIdAsync(transactionId: String): Result<Subscription?> {
-        return executeWithExceptionMapping("GetByTransactionId") {
+        return try {
             logger.logInfo("Getting subscription by transaction ID: $transactionId")
 
-            val connection = context.getConnection()
-            val entities = connection.queryList(
+            val entities = context.queryAsync<SubscriptionEntity>(
                 "SELECT * FROM Subscription WHERE transactionId = ? LIMIT 1",
-                SubscriptionEntity::class,
+                ::mapCursorToSubscriptionEntity,
                 transactionId
             )
 
-            val result = entities.firstOrNull()?.toDomain()
+            val result = entities.firstOrNull()?.let { mapEntityToDomain(it) }
             logger.logInfo("Found subscription: ${result?.id ?: "none"} for transaction: $transactionId")
-            result
+            Result.success(result)
+        } catch (ex: Exception) {
+            logger.logError("Failed to get subscription by transaction ID: $transactionId", ex)
+            Result.failure(exceptionMapper.mapToSubscriptionDomainException(ex, "CreateSubscription").message ?: "Subscription operation failed")
         }
     }
 
     override suspend fun updateAsync(subscription: Subscription): Result<Subscription> {
-        return executeWithExceptionMapping("UpdateSubscription") {
+        return try {
             logger.logInfo("Updating subscription: ${subscription.id}")
 
-            val entity = subscription.toEntity()
-            entity.timestamp = Clock.System.now().epochSeconds
-
-            val connection = context.getConnection()
-            val rowsAffected = connection.executeUpdate(
-                "UPDATE Subscription SET userId = ?, productId = ?, transactionId = ?, purchaseToken = ?, status = ?, startDate = ?, expirationDate = ?, autoRenewing = ?, lastVerified = ?, cancelledAt = ?, renewalCount = ?, timestamp = ? WHERE id = ?",
+            val entity = mapDomainToEntity(subscription)
+            val rowsAffected = context.executeAsync(
+                """UPDATE Subscription 
+                   SET userId = ?, productId = ?, transactionId = ?, purchaseToken = ?, 
+                       status = ?, startDate = ?, expirationDate = ?, autoRenewing = ?, 
+                       lastVerified = ?, cancelledAt = ?, renewalCount = ?, timestamp = ?
+                   WHERE id = ?""",
                 entity.userId,
                 entity.productId,
                 entity.transactionId,
@@ -120,67 +112,75 @@ class SubscriptionRepositoryImpl(
             }
 
             logger.logInfo("Successfully updated subscription: ${subscription.id}")
-            subscription
+            Result.success(subscription)
+        } catch (ex: Exception) {
+            logger.logError("Failed to update subscription: ${subscription.id}", ex)
+            Result.failure(exceptionMapper.mapToSubscriptionDomainException(ex, "CreateSubscription").message ?: "Subscription operation failed")
         }
     }
 
     override suspend fun getByPurchaseTokenAsync(purchaseToken: String): Result<Subscription?> {
-        return executeWithExceptionMapping("GetByPurchaseToken") {
+        return try {
             logger.logInfo("Getting subscription by purchase token")
 
-            val connection = context.getConnection()
-            val entities = connection.queryList(
+            val entities = context.queryAsync<SubscriptionEntity>(
                 "SELECT * FROM Subscription WHERE purchaseToken = ? LIMIT 1",
-                SubscriptionEntity::class,
+                ::mapCursorToSubscriptionEntity,
                 purchaseToken
             )
 
-            val result = entities.firstOrNull()?.toDomain()
+            val result = entities.firstOrNull()?.let { mapEntityToDomain(it) }
             logger.logInfo("Found subscription: ${result?.id ?: "none"} for purchase token")
-            result
+            Result.success(result)
+        } catch (ex: Exception) {
+            logger.logError("Failed to get subscription by purchase token", ex)
+            Result.failure(exceptionMapper.mapToSubscriptionDomainException(ex, "CreateSubscription").message ?: "Subscription operation failed")
         }
     }
 
     override suspend fun getSubscriptionsByUserIdAsync(userId: String): Result<List<Subscription>> {
-        return executeWithExceptionMapping("GetSubscriptionsByUserId") {
+        return try {
             logger.logInfo("Getting subscriptions for user: $userId")
 
-            val connection = context.getConnection()
-            val entities = connection.queryList(
+            val entities = context.queryAsync<SubscriptionEntity>(
                 "SELECT * FROM Subscription WHERE userId = ? ORDER BY startDate DESC",
-                SubscriptionEntity::class,
+                ::mapCursorToSubscriptionEntity,
                 userId
             )
 
-            val result = entities.map { it.toDomain() }
+            val result = entities.map { mapEntityToDomain(it) }
             logger.logInfo("Found ${result.size} subscriptions for user: $userId")
-            result
+            Result.success(result)
+        } catch (ex: Exception) {
+            logger.logError("Failed to get subscriptions for user: $userId", ex)
+            Result.failure(exceptionMapper.mapToSubscriptionDomainException(ex, "CreateSubscription").message ?: "Subscription operation failed")
         }
     }
 
     override suspend fun getByIdAsync(id: Int): Result<Subscription?> {
-        return executeWithExceptionMapping("GetById") {
+        return try {
             logger.logInfo("Getting subscription by ID: $id")
 
-            val connection = context.getConnection()
-            val entities = connection.queryList(
+            val entities = context.queryAsync<SubscriptionEntity>(
                 "SELECT * FROM Subscription WHERE id = ? LIMIT 1",
-                SubscriptionEntity::class,
+                ::mapCursorToSubscriptionEntity,
                 id
             )
 
-            val result = entities.firstOrNull()?.toDomain()
+            val result = entities.firstOrNull()?.let { mapEntityToDomain(it) }
             logger.logInfo("Found subscription: ${result?.id ?: "none"}")
-            result
+            Result.success(result)
+        } catch (ex: Exception) {
+            logger.logError("Failed to get subscription by ID: $id", ex)
+            Result.failure(exceptionMapper.mapToSubscriptionDomainException(ex, "CreateSubscription").message ?: "Subscription operation failed")
         }
     }
 
     override suspend fun deleteAsync(subscription: Subscription): Result<Unit> {
-        return executeWithExceptionMapping("DeleteSubscription") {
+        return try {
             logger.logInfo("Deleting subscription: ${subscription.id}")
 
-            val connection = context.getConnection()
-            val rowsAffected = connection.executeUpdate(
+            val rowsAffected = context.executeAsync(
                 "DELETE FROM Subscription WHERE id = ?",
                 subscription.id
             )
@@ -190,119 +190,172 @@ class SubscriptionRepositoryImpl(
             }
 
             logger.logInfo("Successfully deleted subscription: ${subscription.id}")
+            Result.success(Unit)
+        } catch (ex: Exception) {
+            logger.logError("Failed to delete subscription: ${subscription.id}", ex)
+            Result.failure(exceptionMapper.mapToSubscriptionDomainException(ex, "CreateSubscription").message ?: "Subscription operation failed")
         }
     }
 
     override suspend fun getExpiredSubscriptionsAsync(): Result<List<Subscription>> {
-        return executeWithExceptionMapping("GetExpiredSubscriptions") {
+        return try {
             logger.logInfo("Getting expired subscriptions")
 
-            val connection = context.getConnection()
-            val entities = connection.queryList(
-                "SELECT * FROM Subscription WHERE expirationDate <= ? AND status IN (?, ?) ORDER BY expirationDate ASC",
-                SubscriptionEntity::class,
+            val entities = context.queryAsync<SubscriptionEntity>(
+                """SELECT * FROM Subscription 
+                   WHERE expirationDate <= ? AND status IN (?, ?) 
+                   ORDER BY expirationDate ASC""",
+                ::mapCursorToSubscriptionEntity,
                 Clock.System.now().epochSeconds,
                 SubscriptionStatus.ACTIVE.name,
                 SubscriptionStatus.GRACE_PERIOD.name
             )
 
-            val result = entities.map { it.toDomain() }
+            val result = entities.map { mapEntityToDomain(it) }
             logger.logInfo("Found ${result.size} expired subscriptions")
-            result
+            Result.success(result)
+        } catch (ex: Exception) {
+            logger.logError("Failed to get expired subscriptions", ex)
+            Result.failure(exceptionMapper.mapToSubscriptionDomainException(ex, "CreateSubscription").message ?: "Subscription operation failed")
         }
     }
 
     override suspend fun getSubscriptionsNeedingVerificationAsync(): Result<List<Subscription>> {
-        return executeWithExceptionMapping("GetSubscriptionsNeedingVerification") {
+        return try {
             logger.logInfo("Getting subscriptions needing verification")
 
             val twentyFourHoursAgo = Clock.System.now().epochSeconds - 86400L
 
-            val connection = context.getConnection()
-            val entities = connection.queryList(
-                "SELECT * FROM Subscription WHERE status = ? AND (lastVerified IS NULL OR lastVerified < ?) ORDER BY lastVerified ASC",
-                SubscriptionEntity::class,
+            val entities = context.queryAsync<SubscriptionEntity>(
+                """SELECT * FROM Subscription 
+                   WHERE status = ? AND (lastVerified IS NULL OR lastVerified < ?)
+                   ORDER BY lastVerified ASC""",
+                ::mapCursorToSubscriptionEntity,
                 SubscriptionStatus.ACTIVE.name,
                 twentyFourHoursAgo
             )
 
-            val result = entities.map { it.toDomain() }
+            val result = entities.map { mapEntityToDomain(it) }
             logger.logInfo("Found ${result.size} subscriptions needing verification")
-            result
-        }
-    }
-
-    private suspend fun <T> executeWithExceptionMapping(
-        operation: String,
-        block: suspend () -> T
-    ): Result<T> {
-        return try {
-            val result = block()
             Result.success(result)
-        } catch (ex: SubscriptionDomainException) {
-            logger.logError("Subscription domain error in $operation", ex)
-            Result.failure(ex.getUserFriendlyMessage())
         } catch (ex: Exception) {
-            logger.logError("Infrastructure error in $operation", ex)
-            val mappedException = exceptionMapper.mapToSubscriptionDomainException(ex, operation)
-            Result.failure(mappedException.getUserFriendlyMessage())
+            logger.logError("Failed to get subscriptions needing verification", ex)
+            Result.failure(exceptionMapper.mapToSubscriptionDomainException(ex, "CreateSubscription").message ?: "Subscription operation failed")
+        }
+    }
+
+    private fun createSubscriptionWithId(originalSubscription: Subscription, id: Int): Subscription {
+        val newSubscription = Subscription(
+            userId = originalSubscription.userId,
+            productId = originalSubscription.productId,
+            transactionId = originalSubscription.transactionId,
+            purchaseToken = originalSubscription.purchaseToken,
+            status = originalSubscription.status,
+            startDate = originalSubscription.startDate,
+            expirationDate = originalSubscription.expirationDate,
+            autoRenewing = originalSubscription.autoRenewing
+        )
+
+        setIdUsingReflection(newSubscription, id)
+
+        originalSubscription.lastVerified?.let {
+            newSubscription.markAsVerified()
+        }
+
+        if (originalSubscription.status == SubscriptionStatus.CANCELLED) {
+            newSubscription.cancel()
+        }
+
+        repeat(originalSubscription.renewalCount) {
+            incrementRenewalCountUsingReflection(newSubscription)
+        }
+
+        return newSubscription
+    }
+
+    private fun mapEntityToDomain(entity: SubscriptionEntity): Subscription {
+        val subscription = Subscription(
+            userId = entity.userId,
+            productId = entity.productId,
+            transactionId = entity.transactionId,
+            purchaseToken = entity.purchaseToken,
+            status = SubscriptionStatus.valueOf(entity.status),
+            startDate = Instant.fromEpochSeconds(entity.startDate),
+            expirationDate = Instant.fromEpochSeconds(entity.expirationDate),
+            autoRenewing = entity.autoRenewing
+        )
+
+        setIdUsingReflection(subscription, entity.id)
+
+        entity.lastVerified?.let {
+            subscription.markAsVerified()
+        }
+
+        if (entity.cancelledAt != null && subscription.status == SubscriptionStatus.CANCELLED) {
+            subscription.cancel()
+        }
+
+        repeat(entity.renewalCount) {
+            incrementRenewalCountUsingReflection(subscription)
+        }
+
+        return subscription
+    }
+
+    private fun mapDomainToEntity(subscription: Subscription): SubscriptionEntity {
+        return SubscriptionEntity(
+            id = subscription.id,
+            userId = subscription.userId,
+            productId = subscription.productId,
+            transactionId = subscription.transactionId,
+            purchaseToken = subscription.purchaseToken,
+            status = subscription.status.name,
+            startDate = subscription.startDate.epochSeconds,
+            expirationDate = subscription.expirationDate.epochSeconds,
+            autoRenewing = subscription.autoRenewing,
+            lastVerified = subscription.lastVerified?.epochSeconds,
+            cancelledAt = subscription.cancelledAt?.epochSeconds,
+            renewalCount = subscription.renewalCount,
+            timestamp = Clock.System.now().epochSeconds
+        )
+    }
+
+    private fun mapCursorToSubscriptionEntity(cursor: app.cash.sqldelight.db.SqlCursor): SubscriptionEntity {
+        return SubscriptionEntity(
+            id = cursor.getLong(0)?.toInt() ?: 0,
+            userId = cursor.getString(1) ?: "",
+            productId = cursor.getString(2) ?: "",
+            transactionId = cursor.getString(3) ?: "",
+            purchaseToken = cursor.getString(4) ?: "",
+            status = cursor.getString(5) ?: SubscriptionStatus.EXPIRED.name,
+            startDate = cursor.getLong(6) ?: 0L,
+            expirationDate = cursor.getLong(7) ?: 0L,
+            autoRenewing = cursor.getLong(8) == 1L,
+            lastVerified = cursor.getLong(9),
+            cancelledAt = cursor.getLong(10),
+            renewalCount = cursor.getLong(11)?.toInt() ?: 0,
+            timestamp = cursor.getLong(12) ?: 0L
+        )
+    }
+
+    private fun setIdUsingReflection(subscription: Subscription, id: Int) {
+        try {
+            val idField = subscription::class.java.getDeclaredField("id")
+            idField.isAccessible = true
+            idField.setInt(subscription, id)
+        } catch (e: Exception) {
+            logger.logWarning("Could not set ID via reflection: ${e.message}")
+        }
+    }
+
+    private fun incrementRenewalCountUsingReflection(subscription: Subscription) {
+        try {
+            val renewalCountField = subscription::class.java.getDeclaredField("renewalCount")
+            renewalCountField.isAccessible = true
+            val currentCount = renewalCountField.getInt(subscription)
+            renewalCountField.setInt(subscription, currentCount + 1)
+        } catch (e: Exception) {
+            logger.logWarning("Could not increment renewal count via reflection: ${e.message}")
         }
     }
 }
-
-/**
- * Extension functions for entity/domain mapping
- */
-private fun Subscription.toEntity(): SubscriptionEntity {
-    return SubscriptionEntity(
-        id = this.id,
-        userId = this.userId,
-        productId = this.productId,
-        transactionId = this.transactionId,
-        purchaseToken = this.purchaseToken,
-        status = this.status.name,
-        startDate = this.startDate.epochSeconds,
-        expirationDate = this.expirationDate.epochSeconds,
-        autoRenewing = this.autoRenewing,
-        lastVerified = this.lastVerified?.epochSeconds,
-        cancelledAt = this.cancelledAt?.epochSeconds,
-        renewalCount = this.renewalCount,
-        timestamp = Clock.System.now().epochSeconds
-    )
-}
-
-private fun SubscriptionEntity.toDomain(): Subscription {
-    return Subscription(
-        userId = this.userId,
-        productId = this.productId,
-        transactionId = this.transactionId,
-        purchaseToken = this.purchaseToken,
-        status = SubscriptionStatus.valueOf(this.status),
-        startDate = Instant.fromEpochSeconds(this.startDate),
-        expirationDate = Instant.fromEpochSeconds(this.expirationDate),
-        autoRenewing = this.autoRenewing
-    ).apply {
-        // Set internal properties that are managed by the entity
-        // This would typically require reflection or internal setters
-        // For now, we'll note that the repository layer handles this mapping
-    }
-}
-
-/**
- * Subscription entity for database storage
- */
-data class SubscriptionEntity(
-    val id: Int = 0,
-    val userId: String,
-    val productId: String,
-    val transactionId: String,
-    val purchaseToken: String,
-    val status: String,
-    val startDate: Long,
-    val expirationDate: Long,
-    val autoRenewing: Boolean,
-    val lastVerified: Long? = null,
-    val cancelledAt: Long? = null,
-    val renewalCount: Int = 0,
-    var timestamp: Long = 0
-)
