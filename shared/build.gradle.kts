@@ -16,7 +16,8 @@ kotlin {
             dependencies {
                 // Coroutines
                 implementation(libs.kotlinx.coroutines.core)
-
+                implementation(libs.kotlinx.datetime.v060) // Or your current version
+                implementation(libs.kotlinx.serialization.json.v173)
                 // Serialization
                 implementation(libs.kotlinx.serialization.json)
 
@@ -70,10 +71,10 @@ kotlin {
                 implementation(libs.sqldelight.driver.android)
 
                 // Android Location Services
-                implementation("com.google.android.gms:play-services-location:21.0.1")
+                implementation(libs.play.services.location)
 
                 // Android Notifications
-                implementation("androidx.core:core-ktx:1.13.1")
+                implementation(libs.androidx.core.ktx.v1131)
             }
         }
 

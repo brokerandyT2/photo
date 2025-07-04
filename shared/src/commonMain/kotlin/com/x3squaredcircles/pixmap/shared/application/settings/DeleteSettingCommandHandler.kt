@@ -1,18 +1,19 @@
 // shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/settings/DeleteSettingCommandHandler.kt
 package com.x3squaredcircles.pixmap.shared.application.settings
 
-import com.x3squaredcircles.pixmap.shared.application.common.interfaces.IUnitOfWork
+
 import com.x3squaredcircles.pixmap.shared.application.common.models.Result
 import com.x3squaredcircles.pixmap.shared.application.events.SettingErrorEvent
 import com.x3squaredcircles.pixmap.shared.application.events.SettingErrorType
-import com.x3squaredcircles.pixmap.shared.application.events.`events/errors`.SettingErrorEvent
-import com.x3squaredcircles.pixmap.shared.application.events.`events/errors`.SettingErrorType
+
+
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IRequestHandler
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IMediator
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IRequest
-import com.x3squaredcircles.pixmap.shared.application.resources.AppResources
+import com.x3squaredcircles.pixmap.shared.application.interfaces.IUnitOfWork
+
 import com.x3squaredcircles.pixmap.shared.domain.exceptions.SettingDomainException
-import kotlinx.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.CancellationException
 
 /**
  * Represents a command to delete a setting identified by its key.
@@ -53,26 +54,26 @@ class DeleteSettingCommandHandler(
             if (!settingResult.isSuccess || settingResult.data == null) {
                 mediator.publish(
                     SettingErrorEvent(
-                        key = request.key,
+                        settingKey = request.key,
                         errorType = SettingErrorType.KeyNotFound,
-                        details = AppResources.getSettingErrorKeyNotFoundSpecific(request.key)
+                        additionalContext = AppResources.getSettingErrorKeyNotFoundSpecific(request.key)
                     )
                 )
                 return Result.failure(AppResources.getSettingErrorKeyNotFoundSpecific(request.key))
             }
 
-            val deleteResult = unitOfWork.settings.deleteAsync(settingResult.data)
+            val deleteResult = unitOfWork.settings.deleteAsync(settingResult.data!!.key)
 
             if (!deleteResult.isSuccess) {
                 mediator.publish(
                     SettingErrorEvent(
-                        key = request.key,
+                        settingKey = request.key,
                         errorType = SettingErrorType.DatabaseError,
-                        details = deleteResult.errorMessage ?: "Delete failed"
+                        additionalContext = deleteResult.errorMessage ?: "Delete failed"
                     )
                 )
                 return Result.failure(
-                    deleteResult.errorMessage ?: AppResources.settingErrorDeleteFailed
+                    deleteResult.errorMessage ?: "Delete failed"
                 )
             }
 
@@ -84,22 +85,22 @@ class DeleteSettingCommandHandler(
                 "READ_ONLY_SETTING" -> {
                     mediator.publish(
                         SettingErrorEvent(
-                            key = request.key,
+                            settingKey = request.key,
                             errorType = SettingErrorType.ReadOnlySetting,
-                            details = ex.message ?: "Setting is read-only"
+                            additionalContext = ex.message ?: "Setting is read-only"
                         )
                     )
-                    Result.failure(AppResources.settingErrorCannotDeleteReadOnly)
+                    Result.failure("Setting is read-only")
                 }
                 else -> {
                     mediator.publish(
                         SettingErrorEvent(
-                            key = request.key,
+                            settingKey = request.key,
                             errorType = SettingErrorType.DatabaseError,
-                            details = ex.message ?: "Domain exception"
+                            additionalContext = ex.message ?: "Domain exception"
                         )
                     )
-                    Result.failure(AppResources.getSettingErrorDeleteFailedWithException(ex.message ?: "Domain exception"))
+                    Result.failure(ex.message ?: "Domain exception")
                 }
             }
         } catch (ex: CancellationException) {
@@ -107,12 +108,12 @@ class DeleteSettingCommandHandler(
         } catch (ex: Exception) {
             mediator.publish(
                 SettingErrorEvent(
-                    key = request.key,
+                    settingKey = request.key,
                     errorType = SettingErrorType.DatabaseError,
-                    details = ex.message ?: "Unknown error"
+                    additionalContext = ex.message ?: "Unknown error"
                 )
             )
-            Result.failure(AppResources.getSettingErrorDeleteFailedWithException(ex.message ?: "Unknown error"))
+            Result.failure(ex.message ?: "Unknown error")
         }
     }
 }

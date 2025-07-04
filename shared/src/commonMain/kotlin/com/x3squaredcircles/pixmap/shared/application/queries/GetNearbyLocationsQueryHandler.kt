@@ -1,13 +1,12 @@
 // shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/queries/GetNearbyLocationsQueryHandler.kt
 package com.x3squaredcircles.pixmap.shared.application.queries
 
-import com.x3squaredcircles.pixmap.shared.application.common.interfaces.IUnitOfWork
-import com.x3squaredcircles.pixmap.shared.application.common.models.Result
+import com.x3squaredcircles.pixmap.shared.application.interfaces.IUnitOfWork
 import com.x3squaredcircles.pixmap.shared.application.dto.LocationListDto
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IRequestHandler
-import com.x3squaredcircles.pixmap.shared.application.resources.AppResources
-import com.x3squaredcircles.pixmap.shared.domain.mappers.LocationMapper
-import kotlinx.coroutines.cancellation.CancellationException
+import com.x3squaredcircles.pixmap.shared.application.interfaces.IRequest
+import com.x3squaredcircles.pixmap.shared.application.mappers.toLocationListDtoList
+import kotlinx.coroutines.CancellationException
 
 /**
  * Represents a query to retrieve a list of locations within a specified distance from a given geographic coordinate.
@@ -19,7 +18,7 @@ data class GetNearbyLocationsQuery(
     val latitude: Double,
     val longitude: Double,
     val distanceKm: Double = 10.0
-)
+) : IRequest<List<LocationListDto>>
 
 /**
  * Handles queries to retrieve a list of nearby locations based on geographic coordinates and a specified distance.
@@ -29,20 +28,17 @@ data class GetNearbyLocationsQuery(
  * [LocationListDto] objects.
  */
 class GetNearbyLocationsQueryHandler(
-    private val unitOfWork: IUnitOfWork,
-    private val mapper: LocationMapper
+    private val unitOfWork: IUnitOfWork
 ) : IRequestHandler<GetNearbyLocationsQuery, List<LocationListDto>> {
 
     /**
      * Handles the query to retrieve a list of nearby locations based on the specified geographic coordinates and distance.
      *
      * @param request The query containing the latitude, longitude, and distance in kilometers to search for nearby locations.
-     * @return A [Result] containing a list of [LocationListDto] objects representing the nearby
-     * locations. If no locations are found, the result contains an empty list. If an error occurs, the result
-     * contains an error message.
+     * @return A list of [LocationListDto] objects representing the nearby locations. If no locations are found, returns an empty list.
      * @throws CancellationException If the operation is cancelled.
      */
-    override suspend fun handle(request: GetNearbyLocationsQuery): Result<List<LocationListDto>> {
+    override suspend fun handle(request: GetNearbyLocationsQuery): List<LocationListDto> {
         return try {
             val result = unitOfWork.locations.getNearbyAsync(
                 latitude = request.latitude,
@@ -51,20 +47,16 @@ class GetNearbyLocationsQueryHandler(
             )
 
             if (!result.isSuccess) {
-                return Result.failure(result.errorMessage ?: "Failed to retrieve nearby locations")
+                throw RuntimeException("Failed to retrieve nearby locations: ${result.errorMessage}")
             }
 
-            val locations = result.data
-            if (locations == null) {
-                return Result.success(emptyList())
-            }
+            val locations = result.data ?: emptyList()
+            locations.toLocationListDtoList()
 
-            val locationDtos = mapper.toLocationListDtoList(locations)
-            Result.success(locationDtos)
         } catch (ex: CancellationException) {
             throw ex
         } catch (ex: Exception) {
-            Result.failure(AppResources.getLocationErrorNearbyRetrieveFailed(ex.message ?: "Unknown error"))
+            throw RuntimeException("System error occurred while retrieving nearby locations: ${ex.message}", ex)
         }
     }
 }

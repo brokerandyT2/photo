@@ -17,7 +17,7 @@ class GetRandomTipByTypeQueryHandler(
         val result = tipRepository.getRandomByTypeAsync(request.tipTypeId)
 
         return if (result.isSuccess) {
-            result.getOrNull()
+            result.data
         } else {
             throw RuntimeException("Failed to get random tip: ${result}")
         }

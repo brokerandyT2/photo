@@ -1,15 +1,16 @@
 // shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/settings/UpdateSettingCommandHandler.kt
 package com.x3squaredcircles.pixmap.shared.application.settings
 
-import com.x3squaredcircles.pixmap.shared.application.common.interfaces.IUnitOfWork
+
 import com.x3squaredcircles.pixmap.shared.application.common.models.Result
-import com.x3squaredcircles.pixmap.shared.application.events.`events/errors`.SettingErrorEvent
-import com.x3squaredcircles.pixmap.shared.application.events.`events/errors`.SettingErrorType
+import com.x3squaredcircles.pixmap.shared.application.events.SettingErrorEvent
+import com.x3squaredcircles.pixmap.shared.application.events.SettingErrorType
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IRequestHandler
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IMediator
-import com.x3squaredcircles.pixmap.shared.application.resources.AppResources
+import com.x3squaredcircles.pixmap.shared.application.interfaces.IUnitOfWork
+
 import com.x3squaredcircles.pixmap.shared.domain.exceptions.SettingDomainException
-import kotlinx.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.CancellationException
 import kotlinx.datetime.Instant
 
 /**
@@ -70,42 +71,42 @@ class UpdateSettingCommandHandler(
             if (!settingResult.isSuccess || settingResult.data == null) {
                 mediator.publish(
                     SettingErrorEvent(
-                        key = request.key,
+                        settingKey = request.key,
                         errorType = SettingErrorType.KeyNotFound,
-                        details = null
+                        additionalContext = null
                     )
                 )
-                return Result.failure(AppResources.getSettingErrorKeyNotFoundSpecific(request.key))
+                return Result.failure("Key not found")
             }
 
             val setting = settingResult.data
-            setting.updateValue(request.value)
+            setting!!.updateValue(request.value)
 
             // Update description if provided
-            request.description?.let { setting.updateDescription(it) }
+            request.description?.let { setting.updateValueAndDescription(settingResult.data!!.key, settingResult.data!!.description)  }
 
             val updateResult = unitOfWork.settings.updateAsync(setting)
 
             if (!updateResult.isSuccess || updateResult.data == null) {
                 mediator.publish(
                     SettingErrorEvent(
-                        key = request.key,
+                        settingKey = request.key,
                         errorType = SettingErrorType.DatabaseError,
-                        details = updateResult.errorMessage
+                        additionalContext = updateResult.errorMessage
                     )
                 )
                 return Result.failure(
-                    updateResult.errorMessage ?: AppResources.settingErrorUpdateFailed
+                    updateResult.errorMessage ?: "Setting update failed"
                 )
             }
 
             val updatedSetting = updateResult.data
 
             val response = UpdateSettingCommandResponse(
-                id = updatedSetting.id,
-                key = updatedSetting.key,
-                value = updatedSetting.value,
-                description = updatedSetting.description,
+                id = updatedSetting!!.id,
+                key = updatedSetting!!.key,
+                value = updatedSetting!!.value,
+                description = updatedSetting!!.description,
                 timestamp = updatedSetting.timestamp
             )
 
@@ -115,32 +116,32 @@ class UpdateSettingCommandHandler(
                 "READ_ONLY_SETTING" -> {
                     mediator.publish(
                         SettingErrorEvent(
-                            key = request.key,
+                            settingKey = request.key,
                             errorType = SettingErrorType.ReadOnlySetting,
-                            details = ex.message
+                            additionalContext = ex.message
                         )
                     )
-                    Result.failure(AppResources.settingErrorCannotUpdateReadOnly)
+                    Result.failure("Setting is read only.")
                 }
                 "INVALID_VALUE" -> {
                     mediator.publish(
                         SettingErrorEvent(
-                            key = request.key,
+                            settingKey = request.key,
                             errorType = SettingErrorType.InvalidValue,
-                            details = ex.message
+                            additionalContext = ex.message
                         )
                     )
-                    Result.failure(AppResources.settingErrorInvalidValueProvided)
+                    Result.failure("Invalid value")
                 }
                 else -> {
                     mediator.publish(
                         SettingErrorEvent(
-                            key = request.key,
+                            settingKey = request.key,
                             errorType = SettingErrorType.DatabaseError,
-                            details = ex.message
+                            additionalContext = ex.message
                         )
                     )
-                    Result.failure(AppResources.getSettingErrorUpdateFailedWithException(ex.message ?: "Domain exception"))
+                    Result.failure(ex.message ?: "Domain exception")
                 }
             }
         } catch (ex: CancellationException) {
@@ -148,12 +149,12 @@ class UpdateSettingCommandHandler(
         } catch (ex: Exception) {
             mediator.publish(
                 SettingErrorEvent(
-                    key = request.key,
+                    settingKey = request.key,
                     errorType = SettingErrorType.DatabaseError,
-                    details = ex.message
+                    additionalContext = ex.message
                 )
             )
-            Result.failure(AppResources.getSettingErrorUpdateFailedWithException(ex.message ?: "Unknown error"))
+            Result.failure(ex.message ?: "Unknown error")
         }
     }
 }

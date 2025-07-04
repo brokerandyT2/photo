@@ -17,7 +17,7 @@ class UpdateWeatherCommandHandler(
         val result = weatherService.updateWeatherForLocationAsync(request.locationId)
 
         return if (result.isSuccess) {
-            result.getOrThrow()
+            result.data?: throw RuntimeException("Failed to update weather")
         } else {
             throw RuntimeException("Failed to update weather: ${result}")
         }

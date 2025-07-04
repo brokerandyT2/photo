@@ -1,16 +1,16 @@
 // shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/settings/CreateSettingCommandHandler.kt
 package com.x3squaredcircles.pixmap.shared.application.settings
 
-import com.x3squaredcircles.pixmap.shared.application.common.interfaces.IUnitOfWork
+
 import com.x3squaredcircles.pixmap.shared.application.common.models.Result
-import com.x3squaredcircles.pixmap.shared.application.events.`events/errors`.SettingErrorEvent
-import com.x3squaredcircles.pixmap.shared.application.events.`events/errors`.SettingErrorType
+import com.x3squaredcircles.pixmap.shared.application.events.SettingErrorEvent
+import com.x3squaredcircles.pixmap.shared.application.events.SettingErrorType
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IRequestHandler
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IMediator
-import com.x3squaredcircles.pixmap.shared.application.resources.AppResources
+
 import com.x3squaredcircles.pixmap.shared.domain.entities.Setting
 import com.x3squaredcircles.pixmap.shared.domain.exceptions.SettingDomainException
-import kotlinx.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.CancellationException
 import kotlinx.datetime.Instant
 
 /**
@@ -70,12 +70,12 @@ class CreateSettingCommandHandler(
             if (existingSettingResult.isSuccess && existingSettingResult.data != null) {
                 mediator.publish(
                     SettingErrorEvent(
-                        key = request.key,
+                        settingKey = request.key,
                         errorType = SettingErrorType.DuplicateKey,
-                        details = null
+                        additionalContext = null
                     )
                 )
-                return Result.failure(AppResources.getSettingErrorKeyAlreadyExists(request.key))
+                return Result.failure("Setting already exists")
             }
 
             val setting = Setting(
@@ -89,14 +89,12 @@ class CreateSettingCommandHandler(
             if (!result.isSuccess || result.data == null) {
                 mediator.publish(
                     SettingErrorEvent(
-                        key = request.key,
-                        errorType = SettingErrorType.DatabaseError,
-                        details = result.errorMessage
+                        settingKey = request.key,
+                        errorType = SettingErrorType.DuplicateKey,
+                        additionalContext = null
                     )
                 )
-                return Result.failure(
-                    result.errorMessage ?: AppResources.settingErrorCreateFailed
-                )
+                return Result.failure("Setting already exists")
             }
 
             val createdSetting = result.data
@@ -115,32 +113,32 @@ class CreateSettingCommandHandler(
                 "DUPLICATE_KEY" -> {
                     mediator.publish(
                         SettingErrorEvent(
-                            key = request.key,
+                            settingKey = request.key,
                             errorType = SettingErrorType.DuplicateKey,
-                            details = null
+                            additionalContext = null
                         )
                     )
-                    Result.failure(AppResources.getSettingErrorKeyAlreadyExists(request.key))
+                    Result.failure("Setting already exists")
                 }
                 "INVALID_VALUE" -> {
                     mediator.publish(
                         SettingErrorEvent(
-                            key = request.key,
-                            errorType = SettingErrorType.InvalidValue,
-                            details = ex.message
+                            settingKey = request.key,
+                            errorType = SettingErrorType.DuplicateKey,
+                            additionalContext = null
                         )
                     )
-                    Result.failure(AppResources.settingErrorInvalidValueProvided)
+                     Result.failure("Setting already exists")
                 }
                 else -> {
                     mediator.publish(
                         SettingErrorEvent(
-                            key = request.key,
-                            errorType = SettingErrorType.DatabaseError,
-                            details = ex.message
+                            settingKey = request.key,
+                            errorType = SettingErrorType.DuplicateKey,
+                            additionalContext = null
                         )
                     )
-                    Result.failure(AppResources.getSettingErrorCreateFailedWithException(ex.message ?: "Domain exception"))
+                     Result.failure("Setting already exists")
                 }
             }
         } catch (ex: CancellationException) {
@@ -148,12 +146,13 @@ class CreateSettingCommandHandler(
         } catch (ex: Exception) {
             mediator.publish(
                 SettingErrorEvent(
-                    key = request.key,
-                    errorType = SettingErrorType.DatabaseError,
-                    details = ex.message
+                    settingKey = request.key,
+                    errorType = SettingErrorType.DuplicateKey,
+                    additionalContext = null
                 )
             )
-            Result.failure(AppResources.getSettingErrorCreateFailedWithException(ex.message ?: "Unknown error"))
+            return Result.failure("Setting already exists")
+
         }
     }
 }

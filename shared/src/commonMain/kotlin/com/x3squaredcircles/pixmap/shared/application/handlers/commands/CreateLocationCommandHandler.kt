@@ -40,10 +40,10 @@ class CreateLocationCommandHandler(
         val result = locationRepository.createAsync(location)
 
         return if (result.isSuccess) {
-            val createdLocation = result.getOrThrow()
+            val createdLocation = result.data ?: throw RuntimeException("Failed to create location")
             mapToDto(createdLocation)
         } else {
-            throw RuntimeException(result.getOrNull()?.toString() ?: "Failed to create location")
+            throw RuntimeException( "Failed to create location")
         }
     }
 

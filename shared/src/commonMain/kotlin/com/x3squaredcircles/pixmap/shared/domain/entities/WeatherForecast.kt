@@ -13,7 +13,7 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class WeatherForecast(
-    override val id: Int = 0,
+    override var id: Int = 0,
     val weatherId: Int,
     val date: LocalDate,
     val sunrise: Instant,

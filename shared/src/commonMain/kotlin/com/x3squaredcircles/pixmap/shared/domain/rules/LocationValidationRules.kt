@@ -28,7 +28,7 @@ object LocationValidationRules {
             errors.add("Location description cannot exceed 500 characters")
         }
 
-        if (!location.photoPath.isNullOrBlank() && !isValidPath(location.photoPath)) {
+        if (!location.photoPath.isNullOrBlank() && !isValidPath(location?.photoPath!!)) {
             // Commented out as per original C# code
             // errors.add("Invalid photo path")
         }

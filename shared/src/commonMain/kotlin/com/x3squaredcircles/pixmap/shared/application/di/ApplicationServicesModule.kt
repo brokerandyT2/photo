@@ -33,7 +33,7 @@ val applicationServicesModule = module {
         }
     }
 
-    single<ILoggingService> { LoggingService(get(), get()) }
+    single<ILoggingService> { LoggingService(get()) }
     single<ITimezoneService> { TimezoneService() }
 
     // Alert Service - use infrastructure module implementation

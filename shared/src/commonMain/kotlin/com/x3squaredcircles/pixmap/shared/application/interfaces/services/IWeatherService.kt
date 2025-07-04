@@ -204,7 +204,7 @@ suspend fun IWeatherService.updateWeatherSafely(locationId: Int): WeatherDto? {
     return try {
         val result = updateWeatherForLocationAsync(locationId)
         if (result.isSuccess) {
-            result.getOrNull()
+            result.data
         } else {
             null
         }
@@ -221,7 +221,7 @@ suspend fun IWeatherService.getWeatherOrCached(
     // Try cached first
     val cachedResult = getCachedWeatherAsync(locationId)
     if (cachedResult.isSuccess) {
-        cachedResult.getOrNull()?.let { return Result.success(it) }
+        cachedResult.data?.let { return Result.success(it) }
     }
 
     // Fall back to API

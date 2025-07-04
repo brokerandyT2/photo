@@ -288,7 +288,7 @@ enum class ConstraintType {
 data class DatabaseChange(
     val tableName: String,
     val operation: DatabaseOperation,
-    val recordId: Any? = null,
+    val recordId: Int = 0,
     val timestamp: kotlinx.datetime.Instant = kotlinx.datetime.Clock.System.now()
 )
 

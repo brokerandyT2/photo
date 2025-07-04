@@ -23,7 +23,7 @@ class UpdateLocationCommandHandler(
             throw RuntimeException("Failed to get location: ${existingResult}")
         }
 
-        val location = existingResult.getOrNull()
+        val location = existingResult.data
             ?: throw IllegalArgumentException("Location with ID ${request.id} not found")
 
         location.updateDetails(request.title, request.description)
@@ -45,7 +45,7 @@ class UpdateLocationCommandHandler(
         val result = locationRepository.updateAsync(location)
 
         return if (result.isSuccess) {
-            val updatedLocation = result.getOrThrow()
+            val updatedLocation = result.data ?: throw RuntimeException("Failed to update location")
             mapToDto(updatedLocation)
         } else {
             throw RuntimeException("Failed to update location: ${result}")
@@ -63,4 +63,4 @@ class UpdateLocationCommandHandler(
             state = location.address.state,
             photoPath = location.photoPath,
             isDeleted = location.isDeleted,
-            timestamp = location.timestamp
+            timestamp = location.timestamp)}}

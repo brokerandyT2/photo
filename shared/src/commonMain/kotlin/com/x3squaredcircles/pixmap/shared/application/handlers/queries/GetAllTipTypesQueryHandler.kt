@@ -17,7 +17,7 @@ class GetAllTipTypesQueryHandler(
         val result = tipTypeRepository.getAllAsync()
 
         return if (result.isSuccess) {
-            result.getOrNull() ?: emptyList()
+            result.data ?: emptyList()
         } else {
             throw RuntimeException("Failed to get tip types: ${result}")
         }

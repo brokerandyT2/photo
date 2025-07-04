@@ -1,7 +1,7 @@
 // shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/events/ErrorOccurredEvent.kt
 package com.x3squaredcircles.pixmap.shared.application.events
 
-import com.x3squaredcircles.pixmap.shared.application.resources.AppResources
+
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
 
@@ -19,7 +19,7 @@ class ErrorOccurredEvent(
     val timestamp: Instant = Clock.System.now()
 
     init {
-        require(message.isNotBlank()) { AppResources.validationCannotBeNull }
-        require(source.isNotBlank()) { AppResources.validationCannotBeNull }
+        require(message.isNotBlank()) { "Validation can not be null" }
+        require(source.isNotBlank()){ "Validation can not be null" }
     }
 }

@@ -1,9 +1,9 @@
 // shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/settings/CreateSettingCommandValidator.kt
 package com.x3squaredcircles.pixmap.shared.application.settings
 
+import com.x3squaredcircles.pixmap.shared.application.common.models.ValidationResult
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IValidator
-import com.x3squaredcircles.pixmap.shared.application.models.ValidationResult
-import com.x3squaredcircles.pixmap.shared.application.resources.AppResources
+
 
 /**
  * Provides validation rules for the [CreateSettingCommand] class.
@@ -28,19 +28,19 @@ class CreateSettingCommandValidator : IValidator<CreateSettingCommand> {
 
         // Validate Key
         if (command.key.isBlank()) {
-            errors.add(AppResources.settingValidationErrorKeyRequired)
+            errors.add("Key is blank")
         } else if (command.key.length > 50) {
-            errors.add(AppResources.settingValidationErrorKeyMaxLength)
+            errors.add("Key too long")
         }
 
         // Validate Value
         if (command.value.length > 500) {
-            errors.add(AppResources.settingValidationErrorValueMaxLength)
+            errors.add("Value too long")
         }
 
         // Validate Description
         if (command.description.length > 200) {
-            errors.add(AppResources.settingValidationErrorDescriptionMaxLength)
+            errors.add("Description too long")
         }
 
         return if (errors.isEmpty()) {

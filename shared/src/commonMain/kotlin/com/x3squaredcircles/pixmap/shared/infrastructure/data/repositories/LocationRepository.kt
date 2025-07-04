@@ -1,5 +1,6 @@
 // shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/infrastructure/data/repositories/LocationRepository.kt
 
+
 import com.x3squaredcircles.pixmap.shared.application.common.models.PagedList
 import com.x3squaredcircles.pixmap.shared.application.common.models.Result
 import com.x3squaredcircles.pixmap.shared.domain.entities.Location
@@ -7,7 +8,7 @@ import com.x3squaredcircles.pixmap.shared.domain.valueobjects.Coordinate
 import com.x3squaredcircles.pixmap.shared.infrastructure.data.IDatabaseContext
 import com.x3squaredcircles.pixmap.shared.infrastructure.data.entities.LocationEntity
 import com.x3squaredcircles.pixmap.shared.infrastructure.services.IInfrastructureExceptionMappingService
-import kotlinx.coroutines.logging.Logger
+
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
 import kotlin.math.*

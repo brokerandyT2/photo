@@ -18,7 +18,7 @@ import kotlinx.datetime.Instant
  */
 class DatabaseContext(
     private val driver: SqlDriver,
-    private val logger: kotlinx.coroutines.logging.Logger,
+    private val logger: kotlinx.coroutines.,
     private val databasePath: String? = null
 ) : IDatabaseContext {
 

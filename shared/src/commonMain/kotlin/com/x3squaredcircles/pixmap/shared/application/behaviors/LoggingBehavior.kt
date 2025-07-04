@@ -160,5 +160,7 @@ fun ILoggingService.logWithStructuredData(
         LogLevel.WARNING -> warning(structuredMessage)
         LogLevel.ERROR -> error(structuredMessage)
         LogLevel.CRITICAL -> critical(structuredMessage)
+        LogLevel.VERBOSE -> critical(structuredMessage)
+        LogLevel.NONE -> debug(structuredMessage)
     }
 }

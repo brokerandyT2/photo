@@ -1,9 +1,9 @@
 // shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/settings/DeleteSettingCommandValidator.kt
 package com.x3squaredcircles.pixmap.shared.application.settings
 
+import com.x3squaredcircles.pixmap.shared.application.common.models.ValidationResult
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IValidator
-import com.x3squaredcircles.pixmap.shared.application.models.ValidationResult
-import com.x3squaredcircles.pixmap.shared.application.resources.AppResources
+
 
 /**
  * Provides validation logic for the [DeleteSettingCommand].
@@ -23,7 +23,7 @@ class DeleteSettingCommandValidator : IValidator<DeleteSettingCommand> {
 
         // Validate Key
         if (command.key.isBlank()) {
-            errors.add(AppResources.settingValidationErrorKeyRequired)
+            errors.add("Key required")
         }
 
         return if (errors.isEmpty()) {

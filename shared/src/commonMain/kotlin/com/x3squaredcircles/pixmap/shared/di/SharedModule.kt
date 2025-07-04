@@ -1,5 +1,7 @@
 package com.x3squaredcircles.pixmap.shared.di
 
+import com.x3squaredcircles.pixmap.shared.application.di.applicationModule
+import com.x3squaredcircles.pixmap.shared.application.di.mediatorModule
 import org.koin.dsl.module
 
 /**

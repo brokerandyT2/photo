@@ -2,9 +2,9 @@
 package com.x3squaredcircles.pixmap.shared.application.validation
 
 import com.x3squaredcircles.pixmap.shared.application.commands.CreateTipCommand
+import com.x3squaredcircles.pixmap.shared.application.common.models.ValidationResult
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IValidator
-import com.x3squaredcircles.pixmap.shared.application.models.ValidationResult
-import com.x3squaredcircles.pixmap.shared.application.resources.AppResources
+
 
 /**
  * Provides validation rules for the CreateTipCommand object.
@@ -30,41 +30,41 @@ class CreateTipCommandValidator : IValidator<CreateTipCommand> {
 
         // Validate TipTypeId
         if (command.tipTypeId <= 0) {
-            errors.add(AppResources.tipTypeValidationErrorIdRequired)
+            errors.add("TipTypeId must be greater than 0")
         }
 
         // Validate Title
         if (command.title.isBlank()) {
-            errors.add(AppResources.tipValidationErrorTitleRequired)
+            errors.add("Title is required")
         } else if (command.title.length > 100) {
-            errors.add(AppResources.tipValidationErrorTitleMaxLength)
+            errors.add("Title must not exceed 100 characters")
         }
 
         // Validate Content
         if (command.content.isBlank()) {
-            errors.add(AppResources.tipValidationErrorContentRequired)
+            errors.add("Content is required")
         } else if (command.content.length > 1000) {
-            errors.add(AppResources.tipValidationErrorContentMaxLength)
+            errors.add("Content must not exceed 1000 characters")
         }
 
         // Validate Fstop (optional field)
         command.fstop?.let { fstop ->
             if (fstop.length > 20) {
-                errors.add(AppResources.tipValidationErrorFstopMaxLength)
+                errors.add("Fstop must not exceed 20 characters")
             }
         }
 
         // Validate ShutterSpeed (optional field)
         command.shutterSpeed?.let { shutterSpeed ->
             if (shutterSpeed.length > 20) {
-                errors.add(AppResources.tipValidationErrorShutterSpeedMaxLength)
+                errors.add("ShutterSpeed must not exceed 20 characters")
             }
         }
 
         // Validate Iso (optional field)
         command.iso?.let { iso ->
             if (iso.length > 20) {
-                errors.add(AppResources.tipValidationErrorIsoMaxLength)
+                errors.add("Iso must not exceed 20 characters")
             }
         }
 

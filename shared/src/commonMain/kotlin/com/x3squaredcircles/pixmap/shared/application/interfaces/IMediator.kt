@@ -17,7 +17,7 @@ interface IRequest<out TResponse>
 /**
  * Marker interface for requests that don't return a response
  */
-interface IRequest : IRequest<Unit>
+
 
 /**
  * Marker interface for notifications

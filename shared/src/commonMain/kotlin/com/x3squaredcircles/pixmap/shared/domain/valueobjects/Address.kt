@@ -1,9 +1,12 @@
 // shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/domain/valueobjects/Address.kt
 package com.x3squaredcircles.pixmap.shared.domain.valueobjects
 
+import kotlinx.serialization.Serializable
+
 /**
  * Value object representing a physical address
  */
+@Serializable
 data class Address(
     val city: String,
     val state: String

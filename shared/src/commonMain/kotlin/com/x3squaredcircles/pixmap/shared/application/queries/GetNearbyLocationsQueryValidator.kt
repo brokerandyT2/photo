@@ -2,8 +2,7 @@
 package com.x3squaredcircles.pixmap.shared.application.queries
 
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IValidator
-import com.x3squaredcircles.pixmap.shared.application.models.ValidationResult
-import com.x3squaredcircles.pixmap.shared.application.resources.AppResources
+import com.x3squaredcircles.pixmap.shared.application.common.models.ValidationResult
 
 /**
  * Validates the parameters of a [GetNearbyLocationsQuery] to ensure they meet the required constraints.
@@ -31,19 +30,19 @@ class GetNearbyLocationsQueryValidator : IValidator<GetNearbyLocationsQuery> {
 
         // Validate Latitude
         if (query.latitude !in -90.0..90.0) {
-            errors.add(AppResources.locationValidationErrorLatitudeRange)
+            errors.add("Latitude must be between -90 and 90 degrees")
         }
 
         // Validate Longitude
         if (query.longitude !in -180.0..180.0) {
-            errors.add(AppResources.locationValidationErrorLongitudeRange)
+            errors.add("Longitude must be between -180 and 180 degrees")
         }
 
         // Validate DistanceKm
         if (query.distanceKm <= 0.0) {
-            errors.add(AppResources.locationValidationErrorDistanceRequired)
+            errors.add("Distance must be greater than 0 kilometers")
         } else if (query.distanceKm > 100.0) {
-            errors.add(AppResources.locationValidationErrorDistanceMaximum)
+            errors.add("Distance cannot exceed 100 kilometers")
         }
 
         return if (errors.isEmpty()) {

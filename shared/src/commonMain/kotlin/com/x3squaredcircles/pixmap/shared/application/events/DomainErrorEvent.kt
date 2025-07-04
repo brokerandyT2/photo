@@ -82,6 +82,10 @@ class SettingErrorEvent(
             SettingErrorType.INVALID_VALUE -> "Setting_Error_InvalidValue"
             SettingErrorType.READ_ONLY_SETTING -> "Setting_Error_ReadOnlySetting"
             SettingErrorType.DATABASE_ERROR -> "Setting_Error_DatabaseError"
+            SettingErrorType.DuplicateKey -> TODO()
+            SettingErrorType.KeyNotFound -> TODO()
+            SettingErrorType.ReadOnlySetting -> TODO()
+            SettingErrorType.DatabaseError -> TODO()
         }
     }
 
@@ -101,7 +105,12 @@ enum class SettingErrorType {
     KEY_NOT_FOUND,
     INVALID_VALUE,
     READ_ONLY_SETTING,
-    DATABASE_ERROR
+    DATABASE_ERROR,
+    DuplicateKey,
+    KeyNotFound,
+    ReadOnlySetting,
+    DatabaseError,
+    InvalidValue
 }
 
 /**

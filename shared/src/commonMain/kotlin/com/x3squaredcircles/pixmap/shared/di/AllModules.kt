@@ -4,8 +4,9 @@ package com.x3squaredcircles.pixmap.shared.di
 import com.x3squaredcircles.pixmap.shared.application.di.applicationServicesModule
 import com.x3squaredcircles.pixmap.shared.application.di.mediatorModule
 import com.x3squaredcircles.pixmap.shared.domain.di.domainServiceModule
-import com.x3squaredcircles.pixmap.shared.infrastructure.di.infrastructureModule
+import com.x3squaredcircles.pixmap.shared.infrastructure.di.*
 import com.x3squaredcircles.pixmap.shared.infrastructure.di.sharedModule
+import infrastructureModule
 
 /**
  * Combines all shared modules for easy registration

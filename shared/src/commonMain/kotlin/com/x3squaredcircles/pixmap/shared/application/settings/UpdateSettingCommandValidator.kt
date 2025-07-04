@@ -1,9 +1,9 @@
 // shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/settings/UpdateSettingCommandValidator.kt
 package com.x3squaredcircles.pixmap.shared.application.settings
 
+import com.x3squaredcircles.pixmap.shared.application.common.models.ValidationResult
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IValidator
-import com.x3squaredcircles.pixmap.shared.application.models.ValidationResult
-import com.x3squaredcircles.pixmap.shared.application.resources.AppResources
+
 
 /**
  * Provides validation rules for the [UpdateSettingCommand].
@@ -26,14 +26,14 @@ class UpdateSettingCommandValidator : IValidator<UpdateSettingCommand> {
 
         // Validate Key
         if (command.key.isBlank()) {
-            errors.add(AppResources.settingValidationErrorKeyRequired)
+            errors.add("Key required")
         } else if (command.key.length > 50) {
-            errors.add(AppResources.settingValidationErrorKeyMaxLength)
+            errors.add("Key must not exceed 50 characters")
         }
 
         // Validate Value
         if (command.value.length > 500) {
-            errors.add(AppResources.settingValidationErrorValueMaxLength)
+            errors.add("Value must not exceed 500 characters")
         }
 
         return if (errors.isEmpty()) {

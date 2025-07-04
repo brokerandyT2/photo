@@ -1,11 +1,12 @@
 // shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/settings/GetSettingByKeyQueryHandler.kt
 package com.x3squaredcircles.pixmap.shared.application.settings
 
-import com.x3squaredcircles.pixmap.shared.application.common.interfaces.IUnitOfWork
+
 import com.x3squaredcircles.pixmap.shared.application.common.models.Result
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IRequestHandler
-import com.x3squaredcircles.pixmap.shared.application.resources.AppResources
-import kotlinx.coroutines.cancellation.CancellationException
+import com.x3squaredcircles.pixmap.shared.application.interfaces.IUnitOfWork
+
+import kotlinx.coroutines.CancellationException
 import kotlinx.datetime.Instant
 
 /**
@@ -58,16 +59,16 @@ class GetSettingByKeyQueryHandler(
 
             if (!result.isSuccess || result.data == null) {
                 return Result.failure(
-                    result.errorMessage ?: AppResources.getSettingErrorKeyNotFoundSpecific(request.key)
+                    result.errorMessage ?: "Key not found"
                 )
             }
 
             val setting = result.data
 
             val response = GetSettingByKeyQueryResponse(
-                id = setting.id,
-                key = setting.key,
-                value = setting.value,
+                id = setting!!.id.toInt(),
+                key = setting!!.key,
+                value = setting!!.value,
                 description = setting.description,
                 timestamp = setting.timestamp
             )
@@ -76,7 +77,7 @@ class GetSettingByKeyQueryHandler(
         } catch (ex: CancellationException) {
             throw ex
         } catch (ex: Exception) {
-            Result.failure(AppResources.getSettingErrorKeyNotFoundSpecific(request.key))
+            Result.failure("Key not found")
         }
     }
 }

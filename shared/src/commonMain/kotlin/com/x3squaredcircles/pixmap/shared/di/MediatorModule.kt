@@ -8,5 +8,8 @@ import org.koin.dsl.module
  * Dependency injection module for mediator
  */
 val mediatorModule = module {
-    single<IMediator> { Mediator() }
+    single<IMediator> { Mediator(
+        requestHandlers = TODO(),
+        notificationHandlers = TODO()
+    ) }
 }

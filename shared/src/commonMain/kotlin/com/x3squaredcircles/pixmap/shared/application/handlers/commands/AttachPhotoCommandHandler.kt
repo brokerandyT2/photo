@@ -21,7 +21,7 @@ class AttachPhotoCommandHandler(
             throw RuntimeException("Failed to get location: ${existingResult}")
         }
 
-        val location = existingResult.getOrNull()
+        val location = existingResult.data
             ?: throw IllegalArgumentException("Location with ID ${request.locationId} not found")
 
         location.attachPhoto(request.photoPath)
@@ -29,7 +29,7 @@ class AttachPhotoCommandHandler(
         val result = locationRepository.updateAsync(location)
 
         return if (result.isSuccess) {
-            val updatedLocation = result.getOrThrow()
+            val updatedLocation = result.data ?: throw RuntimeException("Failed to update location")
             mapToDto(updatedLocation)
         } else {
             throw RuntimeException("Failed to attach photo: ${result}")

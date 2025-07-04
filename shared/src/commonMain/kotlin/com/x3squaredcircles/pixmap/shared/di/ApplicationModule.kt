@@ -1,6 +1,11 @@
 package com.x3squaredcircles.pixmap.shared.application.di
 
 import com.x3squaredcircles.pixmap.shared.application.handlers.*
+import com.x3squaredcircles.pixmap.shared.application.handlers.commands.AttachPhotoCommandHandler
+import com.x3squaredcircles.pixmap.shared.application.handlers.commands.CreateLocationCommandHandler
+import com.x3squaredcircles.pixmap.shared.application.handlers.commands.UpdateLocationCommandHandler
+import com.x3squaredcircles.pixmap.shared.application.handlers.queries.GetAllLocationsQueryHandler
+import com.x3squaredcircles.pixmap.shared.application.handlers.queries.GetLocationByIdQueryHandler
 import org.koin.dsl.module
 
 /**
@@ -15,7 +20,10 @@ val applicationModule = module {
     single { AttachPhotoCommandHandler(get()) }
 
     // Query Handlers
-    single { GetLocationByIdQueryHandler(get()) }
-    single { GetAllLocationsQueryHandler(get()) }
+    single { GetLocationByIdQueryHandler(
+        get(),
+        mediator = TODO()
+    ) }
+    single { GetAllLocationsQueryHandler(get(), mediator = TODO()) }
     single { GetLocationsByCoordinateQueryHandler(get()) }
 }
