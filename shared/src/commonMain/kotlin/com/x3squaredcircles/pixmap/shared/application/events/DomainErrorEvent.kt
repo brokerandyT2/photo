@@ -86,6 +86,7 @@ class SettingErrorEvent(
             SettingErrorType.KeyNotFound -> TODO()
             SettingErrorType.ReadOnlySetting -> TODO()
             SettingErrorType.DatabaseError -> TODO()
+            SettingErrorType.InvalidValue -> TODO()
         }
     }
 
