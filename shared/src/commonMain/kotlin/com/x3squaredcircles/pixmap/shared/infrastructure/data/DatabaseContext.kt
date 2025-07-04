@@ -2,30 +2,31 @@
 package com.x3squaredcircles.pixmap.shared.infrastructure.data
 
 import app.cash.sqldelight.db.SqlDriver
-import app.cash.sqldelight.db.SqlCursor
+import com.x3squaredcircles.pixmap.shared.application.interfaces.services.ILoggingService
+import com.x3squaredcircles.pixmap.core.data.DatabaseInitializer
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.datetime.Clock
-import kotlinx.datetime.Instant
 
-/**sssss
+/**
  * SQLite database context implementation for KMM with optimized performance
  */
 class DatabaseContext(
     private val driver: SqlDriver,
-    private val logger: kotlinx.coroutines.,
+    private val logger: ILoggingService,
     private val databasePath: String? = null
 ) : IDatabaseContext {
 
     private val initializationMutex = Mutex()
     private val transactionMutex = Mutex()
-    private val preparedStatementCache = mutableMapOf<String, Any>()
     private val changeNotificationFlow = MutableSharedFlow<DatabaseChange>()
+    private var databaseInitializer: DatabaseInitializer? = null
 
     @Volatile
     private var isInitialized = false
@@ -35,11 +36,12 @@ class DatabaseContext(
     private var transactionNestingLevel = 0
 
     companion object {
-        private const val DATABASE_NAME = "locations.db"
         private const val BUSY_TIMEOUT_MS = 3000L
-        private const val DEFAULT_BATCH_SIZE = 100
-        private const val MAX_CACHED_STATEMENTS = 50
         private const val SCHEMA_VERSION = 1
+    }
+
+    fun setDatabaseInitializer(initializer: DatabaseInitializer) {
+        databaseInitializer = initializer
     }
 
     // ===== INITIALIZATION =====
@@ -53,14 +55,19 @@ class DatabaseContext(
             try {
                 logger.info("Starting database initialization...")
 
-                // Enable performance optimizations
                 enablePerformanceOptimizations()
-
-                // Create tables
                 createTables()
-
-                // Set schema version
                 setSchemaVersionAsync(SCHEMA_VERSION)
+
+                databaseInitializer?.let { initializer ->
+                    try {
+                        logger.info("Populating database with default data...")
+                        initializer.initializeDatabaseWithStaticDataAsync()
+                        logger.info("Default data population completed successfully")
+                    } catch (e: Exception) {
+                        logger.error("Failed to populate default data", e)
+                    }
+                }
 
                 isInitialized = true
                 logger.info("Database initialization completed successfully")
@@ -90,9 +97,8 @@ class DatabaseContext(
         return withContext(Dispatchers.IO) {
             try {
                 ensureInitializedAsync()
-                // This would be implemented with actual SQL generation based on entity type
                 val id = executeInsertSql(entity)
-                notifyChange(getTableName<T>(), ChangeType.INSERT, id)
+                notifyChange(getTableName(entity::class.simpleName ?: "Unknown"), ChangeType.INSERT, id)
                 logger.debug("Inserted ${entity::class.simpleName} with ID: $id")
                 id
             } catch (ex: Exception) {
@@ -108,7 +114,7 @@ class DatabaseContext(
                 ensureInitializedAsync()
                 val rowsAffected = executeUpdateSql(entity)
                 if (rowsAffected > 0) {
-                    notifyChange(getTableName<T>(), ChangeType.UPDATE)
+                    notifyChange(getTableName(entity::class.simpleName ?: "Unknown"), ChangeType.UPDATE)
                 }
                 logger.debug("Updated ${entity::class.simpleName}, rows affected: $rowsAffected")
                 rowsAffected
@@ -125,7 +131,7 @@ class DatabaseContext(
                 ensureInitializedAsync()
                 val rowsAffected = executeDeleteSql(entity)
                 if (rowsAffected > 0) {
-                    notifyChange(getTableName<T>(), ChangeType.DELETE)
+                    notifyChange(getTableName(entity::class.simpleName ?: "Unknown"), ChangeType.DELETE)
                 }
                 logger.debug("Deleted ${entity::class.simpleName}, rows affected: $rowsAffected")
                 rowsAffected
@@ -140,9 +146,8 @@ class DatabaseContext(
         return withContext(Dispatchers.IO) {
             try {
                 ensureInitializedAsync()
-                // This would execute a SELECT WHERE primary_key = ? query
-                val rawResult = executeGetByIdSql<T>(primaryKey)
-                rawResult?.let { entityMapper(it) }
+                val result = executeGetByIdSql(primaryKey)
+                result?.let { entityMapper(it) }
             } catch (ex: Exception) {
                 logger.error("Failed to get entity by ID: $primaryKey", ex)
                 throw DatabaseContextException("Get operation failed", ex, "get")
@@ -154,11 +159,11 @@ class DatabaseContext(
         return withContext(Dispatchers.IO) {
             try {
                 ensureInitializedAsync()
-                val rawResults = executeGetAllSql<T>()
-                rawResults.map { entityMapper(it) }
+                val results = executeGetAllSql()
+                results.map { entityMapper(it) }
             } catch (ex: Exception) {
                 logger.error("Failed to get all entities", ex)
-                throw DatabaseContextException("GetAll operation failed", ex, "getAll")
+                throw DatabaseContextException("Get all operation failed", ex, "get_all")
             }
         }
     }
@@ -173,31 +178,23 @@ class DatabaseContext(
         return withContext(Dispatchers.IO) {
             try {
                 ensureInitializedAsync()
-                val results = mutableListOf<T>()
+                val rawResults = mutableListOf<Any>()
 
                 driver.executeQuery(null, sql, { cursor ->
                     while (cursor.next().value) {
-                        results.add(runBlocking { resultMapper(cursor) })
+                        rawResults.add(cursor)
                     }
                     app.cash.sqldelight.db.QueryResult.Unit
                 }, parameters.size) {
                     parameters.forEachIndexed { index, param ->
-                        when (param) {
-                            is String -> it.bindString(index + 1, param)
-                            is Long -> it.bindLong(index + 1, param)
-                            is Double -> it.bindDouble(index + 1, param)
-                            is ByteArray -> it.bindBytes(index + 1, param)
-                            null -> it.bindNull(index + 1)
-                            else -> it.bindString(index + 1, param.toString())
-                        }
+                        bindParameter(this, index + 1, param)
                     }
                 }
 
-                logger.debug("Query returned ${results.size} results")
-                results
+                rawResults.map { resultMapper(it) }
             } catch (ex: Exception) {
-                logger.error("Query execution failed: $sql", ex)
-                throw DatabaseContextException("Query failed", ex, "query", sql)
+                logger.error("Failed to execute query: $sql", ex)
+                throw DatabaseContextException("Query operation failed", ex, "query", sql)
             }
         }
     }
@@ -218,7 +215,10 @@ class DatabaseContext(
         return querySingleAsync(sql, resultMapper, *parameters)
     }
 
-    override suspend fun <T> queryScalarAsync(sql: String, vararg parameters: Any?): T? {
+    override suspend fun <T> queryScalarAsync(
+        sql: String,
+        vararg parameters: Any?
+    ): T? {
         return withContext(Dispatchers.IO) {
             try {
                 ensureInitializedAsync()
@@ -227,80 +227,96 @@ class DatabaseContext(
                 driver.executeQuery(null, sql, { cursor ->
                     if (cursor.next().value) {
                         @Suppress("UNCHECKED_CAST")
-                        result = when (T::class) {
-                            String::class -> cursor.getString(0) as T?
-                            Long::class -> cursor.getLong(0) as T?
-                            Double::class -> cursor.getDouble(0) as T?
-                            Boolean::class -> (cursor.getLong(0) != 0L) as T?
-                            else -> cursor.getString(0) as T?
-                        }
+                        result = cursor.getString(0) as T?
                     }
                     app.cash.sqldelight.db.QueryResult.Unit
                 }, parameters.size) {
                     parameters.forEachIndexed { index, param ->
-                        bindParameter(it, index + 1, param)
+                        bindParameter(this, index + 1, param)
                     }
                 }
 
                 result
             } catch (ex: Exception) {
-                logger.error("Scalar query failed: $sql", ex)
-                throw DatabaseContextException("Scalar query failed", ex, "scalar", sql)
+                logger.error("Failed to execute scalar query: $sql", ex)
+                throw DatabaseContextException("Query scalar operation failed", ex, "query_scalar", sql)
             }
         }
     }
 
-    override suspend fun countAsync(sql: String, vararg parameters: Any?): Long {
+    override suspend fun countAsync(
+        sql: String,
+        vararg parameters: Any?
+    ): Long {
         return queryScalarAsync<Long>(sql, *parameters) ?: 0L
     }
 
-    override suspend fun existsAsync(sql: String, vararg parameters: Any?): Boolean {
-        return queryScalarAsync<Long>(sql, *parameters)?.let { it > 0 } ?: false
+    override suspend fun existsAsync(
+        sql: String,
+        vararg parameters: Any?
+    ): Boolean {
+        return countAsync(sql, *parameters) > 0
     }
 
     // ===== BULK OPERATIONS =====
 
     override suspend fun <T : Any> bulkInsertAsync(entities: List<T>, batchSize: Int): List<Long> {
         return withContext(Dispatchers.IO) {
-            withTransactionAsync {
-                val ids = mutableListOf<Long>()
+            try {
+                ensureInitializedAsync()
+                val results = mutableListOf<Long>()
                 entities.chunked(batchSize).forEach { batch ->
-                    batch.forEach { entity ->
-                        ids.add(insertAsync(entity))
+                    withTransactionAsync {
+                        batch.forEach { entity ->
+                            val id = executeInsertSql(entity)
+                            results.add(id)
+                        }
                     }
                 }
-                logger.info("Bulk inserted ${entities.size} entities in batches of $batchSize")
-                ids
+                results
+            } catch (ex: Exception) {
+                logger.error("Failed to bulk insert entities", ex)
+                throw DatabaseContextException("Bulk insert operation failed", ex, "bulk_insert")
             }
         }
     }
 
     override suspend fun <T : Any> bulkUpdateAsync(entities: List<T>, batchSize: Int): Int {
         return withContext(Dispatchers.IO) {
-            withTransactionAsync {
+            try {
+                ensureInitializedAsync()
                 var totalUpdated = 0
                 entities.chunked(batchSize).forEach { batch ->
-                    batch.forEach { entity ->
-                        totalUpdated += updateAsync(entity)
+                    withTransactionAsync {
+                        batch.forEach { entity ->
+                            totalUpdated += executeUpdateSql(entity)
+                        }
                     }
                 }
-                logger.info("Bulk updated $totalUpdated entities in batches of $batchSize")
                 totalUpdated
+            } catch (ex: Exception) {
+                logger.error("Failed to bulk update entities", ex)
+                throw DatabaseContextException("Bulk update operation failed", ex, "bulk_update")
             }
         }
     }
 
     override suspend fun <T : Any> bulkDeleteAsync(entities: List<T>, batchSize: Int): Int {
         return withContext(Dispatchers.IO) {
-            withTransactionAsync {
+            try {
+                ensureInitializedAsync()
                 var totalDeleted = 0
                 entities.chunked(batchSize).forEach { batch ->
-                    batch.forEach { entity ->
-                        totalDeleted += deleteAsync(entity)
+                    withTransactionAsync {
+                        batch.forEach { entity ->
+                            totalDeleted += executeDeleteSql(entity)
+                        }
                     }
                 }
-                logger.info("Bulk deleted $totalDeleted entities in batches of $batchSize")
                 totalDeleted
+            } catch (ex: Exception) {
+                logger.error("Failed to bulk delete entities", ex)
+                throw DatabaseContextException("Bulk delete operation failed", ex, "bulk_delete")
             }
         }
     }
@@ -309,21 +325,14 @@ class DatabaseContext(
         return withContext(Dispatchers.IO) {
             try {
                 ensureInitializedAsync()
-
-                var rowsAffected = 0
                 driver.execute(null, sql, parameters.size) {
                     parameters.forEachIndexed { index, param ->
-                        bindParameter(it, index + 1, param)
+                        bindParameter(this, index + 1, param)
                     }
-                }.also {
-                    rowsAffected = it.value.toInt()
-                }
-
-                logger.debug("Execute SQL affected $rowsAffected rows")
-                rowsAffected
+                }.value.toInt()
             } catch (ex: Exception) {
-                logger.error("Execute failed: $sql", ex)
-                throw DatabaseContextException("Execute failed", ex, "execute", sql)
+                logger.error("Failed to execute SQL: $sql", ex)
+                throw DatabaseContextException("Execute operation failed", ex, "execute", sql)
             }
         }
     }
@@ -332,65 +341,35 @@ class DatabaseContext(
 
     override suspend fun beginTransactionAsync() {
         transactionMutex.withLock {
-            try {
-                if (!isInTransaction) {
-                    driver.execute(null, "BEGIN TRANSACTION", 0)
-                    isInTransaction = true
-                    transactionNestingLevel = 1
-                    logger.debug("Started database transaction")
-                } else {
-                    transactionNestingLevel++
-                    logger.debug("Incremented transaction nesting level to $transactionNestingLevel")
-                }
-            } catch (ex: Exception) {
-                logger.error("Failed to begin transaction", ex)
-                throw DatabaseContextException("Begin transaction failed", ex, "beginTransaction")
+            if (transactionNestingLevel == 0) {
+                driver.execute(null, "BEGIN TRANSACTION", 0)
+                isInTransaction = true
+                logger.debug("Transaction started")
             }
+            transactionNestingLevel++
         }
     }
 
     override suspend fun commitAsync() {
         transactionMutex.withLock {
-            try {
-                if (isInTransaction) {
-                    transactionNestingLevel--
-
-                    if (transactionNestingLevel <= 0) {
-                        driver.execute(null, "COMMIT", 0)
-                        isInTransaction = false
-                        transactionNestingLevel = 0
-                        logger.debug("Committed database transaction")
-                    } else {
-                        logger.debug("Decremented transaction nesting level to $transactionNestingLevel")
-                    }
-                } else {
-                    logger.warning("Attempted to commit when no transaction is active")
+            if (transactionNestingLevel > 0) {
+                transactionNestingLevel--
+                if (transactionNestingLevel == 0) {
+                    driver.execute(null, "COMMIT", 0)
+                    isInTransaction = false
+                    logger.debug("Transaction committed")
                 }
-            } catch (ex: Exception) {
-                logger.error("Failed to commit transaction", ex)
-                isInTransaction = false
-                transactionNestingLevel = 0
-                throw DatabaseContextException("Commit transaction failed", ex, "commit")
             }
         }
     }
 
     override suspend fun rollbackAsync() {
         transactionMutex.withLock {
-            try {
-                if (isInTransaction) {
-                    driver.execute(null, "ROLLBACK", 0)
-                    isInTransaction = false
-                    transactionNestingLevel = 0
-                    logger.debug("Rolled back database transaction")
-                } else {
-                    logger.warning("Attempted to rollback when no transaction is active")
-                }
-            } catch (ex: Exception) {
-                logger.error("Failed to rollback transaction", ex)
+            if (isInTransaction) {
+                driver.execute(null, "ROLLBACK", 0)
                 isInTransaction = false
                 transactionNestingLevel = 0
-                throw DatabaseContextException("Rollback transaction failed", ex, "rollback")
+                logger.debug("Transaction rolled back")
             }
         }
     }
@@ -402,12 +381,7 @@ class DatabaseContext(
             commitAsync()
             result
         } catch (ex: Exception) {
-            try {
-                rollbackAsync()
-            } catch (rollbackEx: Exception) {
-                logger.error("Failed to rollback after error", rollbackEx)
-                ex.addSuppressed(rollbackEx)
-            }
+            rollbackAsync()
             throw ex
         }
     }
@@ -417,26 +391,30 @@ class DatabaseContext(
     // ===== CHANGE TRACKING =====
 
     override suspend fun saveChangesAsync(): Int {
-        // In SQLite, changes are immediately persisted, so this returns 0
-        // In other contexts, this would flush pending changes
-        return 0
+        return withContext(Dispatchers.IO) {
+            try {
+                commitAsync()
+                logger.debug("Changes saved successfully")
+                1
+            } catch (ex: Exception) {
+                logger.error("Failed to save changes", ex)
+                throw DatabaseContextException("Save changes operation failed", ex, "save_changes")
+            }
+        }
     }
 
     override suspend fun hasPendingChangesAsync(): Boolean {
-        // SQLite doesn't have pending changes like Entity Framework
-        return false
+        return isInTransaction
     }
 
     override suspend fun discardChangesAsync() {
-        // No-op for SQLite since changes are immediate
+        rollbackAsync()
     }
 
     // ===== REACTIVE OPERATIONS =====
 
     override fun <T : Any> observeTable(tableName: String, mapper: suspend (Any) -> T): Flow<List<T>> {
-        // Implementation would use SQLite triggers or polling
-        // For now, return empty flow
-        return kotlinx.coroutines.flow.emptyFlow()
+        return emptyFlow()
     }
 
     override fun observeChanges(): Flow<DatabaseChange> {
@@ -456,7 +434,7 @@ class DatabaseContext(
     override suspend fun getDatabaseInfoAsync(): DatabaseInfo {
         val version = getSchemaVersionAsync()
         val size = getDatabaseSizeAsync()
-        val tableCount = queryScalarAsync<Long>("SELECT COUNT(*) FROM sqlite_master WHERE type='table'")?.toInt() ?: 0
+        val tableCount = countAsync("SELECT COUNT(*) FROM sqlite_master WHERE type='table'").toInt()
 
         return DatabaseInfo(
             version = version,
@@ -475,69 +453,134 @@ class DatabaseContext(
     }
 
     override suspend fun getTableSchemaAsync(tableName: String): TableSchema? {
-        // Implementation would query PRAGMA table_info
-        return null // Simplified for this migration
+        return withContext(Dispatchers.IO) {
+            try {
+                val columns = mutableListOf<ColumnInfo>()
+                driver.executeQuery(null, "PRAGMA table_info($tableName)", { cursor ->
+                    while (cursor.next().value) {
+                        val name = cursor.getString(1) ?: ""
+                        val type = cursor.getString(2) ?: ""
+                        val notNull = cursor.getLong(3) != 0L
+                        val defaultValue = cursor.getString(4)
+                        val isPrimaryKey = cursor.getLong(5) != 0L
+                        columns.add(ColumnInfo(name, type, !notNull, defaultValue, isPrimaryKey))
+                    }
+                    app.cash.sqldelight.db.QueryResult.Unit
+                }, 0) {}
+
+                if (columns.isNotEmpty()) {
+                    TableSchema(tableName, columns, columns.filter { it.isPrimaryKey }.map { it.name })
+                } else {
+                    null
+                }
+            } catch (ex: Exception) {
+                logger.error("Failed to get table schema: $tableName", ex)
+                null
+            }
+        }
     }
 
     // ===== PERFORMANCE AND OPTIMIZATION =====
 
     override suspend fun analyzeAsync() {
-        executeAsync("ANALYZE")
-        logger.info("Database analysis completed")
+        withContext(Dispatchers.IO) {
+            try {
+                driver.execute(null, "ANALYZE", 0)
+                logger.debug("Database analysis completed")
+            } catch (ex: Exception) {
+                logger.error("Failed to analyze database", ex)
+                throw DatabaseContextException("Analyze operation failed", ex, "analyze")
+            }
+        }
     }
 
     override suspend fun vacuumAsync() {
-        executeAsync("VACUUM")
-        logger.info("Database vacuum completed")
+        withContext(Dispatchers.IO) {
+            try {
+                driver.execute(null, "VACUUM", 0)
+                logger.debug("Database vacuum completed")
+            } catch (ex: Exception) {
+                logger.error("Failed to vacuum database", ex)
+                throw DatabaseContextException("Vacuum operation failed", ex, "vacuum")
+            }
+        }
     }
 
     override suspend fun getDatabaseSizeAsync(): Long {
-        return queryScalarAsync<Long>("PRAGMA page_count") ?: 0L
+        return withContext(Dispatchers.IO) {
+            try {
+                var pageCount = 0L
+                var pageSize = 0L
+
+                driver.executeQuery(null, "PRAGMA page_count", { cursor ->
+                    if (cursor.next().value) pageCount = cursor.getLong(0) ?: 0L
+                    app.cash.sqldelight.db.QueryResult.Unit
+                }, 0) {}
+
+                driver.executeQuery(null, "PRAGMA page_size", { cursor ->
+                    if (cursor.next().value) pageSize = cursor.getLong(0) ?: 0L
+                    app.cash.sqldelight.db.QueryResult.Unit
+                }, 0) {}
+
+                pageCount * pageSize
+            } catch (ex: Exception) {
+                logger.error("Failed to get database size", ex)
+                0L
+            }
+        }
     }
 
     override suspend fun optimizeAsync() {
-        analyzeAsync()
-        executeAsync("PRAGMA optimize")
-        logger.info("Database optimization completed")
+        withContext(Dispatchers.IO) {
+            try {
+                analyzeAsync()
+                vacuumAsync()
+                logger.debug("Database optimization completed")
+            } catch (ex: Exception) {
+                logger.error("Failed to optimize database", ex)
+                throw DatabaseContextException("Optimize operation failed", ex, "optimize")
+            }
+        }
     }
 
     // ===== BACKUP AND RESTORE =====
 
     override suspend fun backupAsync(backupPath: String): Boolean {
-        return try {
-            // Platform-specific backup implementation would go here
-            logger.info("Database backup to $backupPath")
-            true
-        } catch (ex: Exception) {
-            logger.error("Backup failed", ex)
-            false
+        return withContext(Dispatchers.IO) {
+            try {
+                logger.debug("Database backup to $backupPath - not implemented")
+                false
+            } catch (ex: Exception) {
+                logger.error("Failed to backup database", ex)
+                false
+            }
         }
     }
 
     override suspend fun restoreAsync(backupPath: String): Boolean {
-        return try {
-            // Platform-specific restore implementation would go here
-            logger.info("Database restore from $backupPath")
-            true
-        } catch (ex: Exception) {
-            logger.error("Restore failed", ex)
-            false
+        return withContext(Dispatchers.IO) {
+            try {
+                logger.debug("Database restore from $backupPath - not implemented")
+                false
+            } catch (ex: Exception) {
+                logger.error("Failed to restore database", ex)
+                false
+            }
         }
     }
 
     // ===== ERROR HANDLING AND LOGGING =====
 
     override fun getLastError(): String? {
-        // Would return last SQLite error
         return null
     }
 
     override fun setSqlLogging(enabled: Boolean) {
-        // Configure SQL logging
+        logger.debug("SQL logging ${if (enabled) "enabled" else "disabled"}")
     }
 
     override fun setLogLevel(level: DatabaseLogLevel) {
-        // Configure log level
+        logger.debug("Database log level set to: $level")
     }
 
     // ===== PRIVATE HELPER METHODS =====
@@ -548,22 +591,28 @@ class DatabaseContext(
         }
     }
 
-    private fun enablePerformanceOptimizations() {
+    private suspend fun enablePerformanceOptimizations() {
         try {
-            driver.execute(null, "PRAGMA journal_mode=WAL", 0)
-            driver.execute(null, "PRAGMA synchronous=NORMAL", 0)
-            driver.execute(null, "PRAGMA cache_size=10000", 0)
-            driver.execute(null, "PRAGMA temp_store=MEMORY", 0)
-            driver.execute(null, "PRAGMA mmap_size=268435456", 0) // 256MB
-            logger.debug("Performance optimizations enabled")
+            val optimizations = listOf(
+                "PRAGMA synchronous = NORMAL",
+                "PRAGMA cache_size = 10000",
+                "PRAGMA temp_store = MEMORY",
+                "PRAGMA journal_mode = WAL",
+                "PRAGMA foreign_keys = ON",
+                "PRAGMA busy_timeout = $BUSY_TIMEOUT_MS"
+            )
+
+            optimizations.forEach { pragma ->
+                driver.execute(null, pragma, 0)
+            }
+
+            logger.debug("Database performance optimizations enabled")
         } catch (ex: Exception) {
-            logger.warning("Some performance optimizations could not be enabled", ex)
+            logger.warning("Failed to enable some performance optimizations", ex)
         }
     }
 
-    private fun createTables() {
-        // This would contain all CREATE TABLE statements
-        // For the migration, these would be generated from the entity definitions
+    private suspend fun createTables() {
         val createStatements = listOf(
             """
             CREATE TABLE IF NOT EXISTS LocationEntity (
@@ -574,9 +623,13 @@ class DatabaseContext(
                 Longitude REAL NOT NULL,
                 City TEXT NOT NULL,
                 State TEXT NOT NULL,
-                PhotoPath TEXT,
-                Timestamp TEXT NOT NULL,
-                IsDeleted INTEGER NOT NULL DEFAULT 0
+                Country TEXT NOT NULL,
+                PostalCode TEXT NOT NULL,
+                Photo TEXT,
+                CreatedAt TEXT NOT NULL,
+                UpdatedAt TEXT NOT NULL,
+                CONSTRAINT chk_latitude CHECK (Latitude >= -90.0 AND Latitude <= 90.0),
+                CONSTRAINT chk_longitude CHECK (Longitude >= -180.0 AND Longitude <= 180.0)
             )
             """.trimIndent(),
 
@@ -585,12 +638,15 @@ class DatabaseContext(
                 Id INTEGER PRIMARY KEY AUTOINCREMENT,
                 LocationId INTEGER NOT NULL,
                 Temperature REAL NOT NULL,
-                Description TEXT NOT NULL,
-                Icon TEXT NOT NULL,
-                WindSpeed REAL NOT NULL,
-                WindDirection REAL NOT NULL,
                 Humidity INTEGER NOT NULL,
-                Pressure INTEGER NOT NULL,
+                Pressure REAL NOT NULL,
+                WindSpeed REAL NOT NULL,
+                WindDirection INTEGER NOT NULL,
+                CloudCover INTEGER NOT NULL,
+                UVIndex REAL NOT NULL,
+                Visibility REAL NOT NULL,
+                Description TEXT NOT NULL,
+                IconCode TEXT NOT NULL,
                 Timestamp TEXT NOT NULL,
                 FOREIGN KEY (LocationId) REFERENCES LocationEntity(Id)
             )
@@ -628,6 +684,19 @@ class DatabaseContext(
                 Timestamp TEXT NOT NULL,
                 FOREIGN KEY (TipTypeId) REFERENCES TipTypeEntity(Id)
             )
+            """.trimIndent(),
+
+            """
+            CREATE TABLE IF NOT EXISTS CameraBodyEntity (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                Name TEXT NOT NULL UNIQUE,
+                SensorType TEXT NOT NULL,
+                SensorWidth REAL NOT NULL,
+                SensorHeight REAL NOT NULL,
+                MountType TEXT NOT NULL,
+                IsCustom INTEGER NOT NULL DEFAULT 0,
+                Timestamp TEXT NOT NULL
+            )
             """.trimIndent()
         )
 
@@ -643,8 +712,8 @@ class DatabaseContext(
         changeNotificationFlow.tryEmit(change)
     }
 
-    private inline fun <reified T> getTableName(): String {
-        return T::class.simpleName + "Entity"
+    private fun getTableName(entityName: String): String {
+        return entityName + "Entity"
     }
 
     private fun bindParameter(statement: app.cash.sqldelight.db.SqlPreparedStatement, index: Int, param: Any?) {
@@ -656,34 +725,15 @@ class DatabaseContext(
             is Float -> statement.bindDouble(index, param.toDouble())
             is Boolean -> statement.bindLong(index, if (param) 1L else 0L)
             is ByteArray -> statement.bindBytes(index, param)
-            null -> statement.bindNull(index)
+            null -> statement.bindString(index, "")
             else -> statement.bindString(index, param.toString())
         }
     }
 
-    // Simplified implementations for entity operations - these would be generated
-    private suspend fun <T> executeInsertSql(entity: T): Long {
-        // This would be generated based on entity type
-        return 1L // Placeholder
-    }
-
-    private suspend fun <T> executeUpdateSql(entity: T): Int {
-        // This would be generated based on entity type
-        return 1 // Placeholder
-    }
-
-    private suspend fun <T> executeDeleteSql(entity: T): Int {
-        // This would be generated based on entity type
-        return 1 // Placeholder
-    }
-
-    private suspend fun <T> executeGetByIdSql(primaryKey: Any): Any? {
-        // This would be generated based on entity type
-        return null // Placeholder
-    }
-
-    private suspend fun <T> executeGetAllSql(): List<Any> {
-        // This would be generated based on entity type
-        return emptyList() // Placeholder
-    }
+    // Placeholder implementations for entity operations
+    private suspend fun <T> executeInsertSql(entity: T): Long = 1L
+    private suspend fun <T> executeUpdateSql(entity: T): Int = 1
+    private suspend fun <T> executeDeleteSql(entity: T): Int = 1
+    private suspend fun executeGetByIdSql(primaryKey: Any): Any? = null
+    private suspend fun executeGetAllSql(): List<Any> = emptyList()
 }

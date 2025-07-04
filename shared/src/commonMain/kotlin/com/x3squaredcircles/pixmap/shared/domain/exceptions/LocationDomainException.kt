@@ -4,7 +4,7 @@ package com.x3squaredcircles.pixmap.shared.domain.exceptions
 /**
  * Exception thrown when location domain business rules are violated
  */
-class LocationDomainException(
+open class LocationDomainException(
     code: String,
     message: String,
     cause: Throwable? = null

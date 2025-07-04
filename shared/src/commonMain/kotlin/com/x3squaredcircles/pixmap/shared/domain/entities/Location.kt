@@ -27,8 +27,6 @@ class Location private constructor() : AggregateRoot() {
     private var _timestamp: Instant = Clock.System.now()
     private var _id: Int = 0
 
-    override val id: Int
-        get() = _id
 
     val title: String
         get() = _title

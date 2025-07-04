@@ -11,8 +11,6 @@ import org.koin.dsl.module
  */
 val viewModelModule = module {
 
-    // Base view model components
-    factoryOf(::BaseViewModel)
 
     // Core view models for main application features
     factoryOf(::LocationViewModel)

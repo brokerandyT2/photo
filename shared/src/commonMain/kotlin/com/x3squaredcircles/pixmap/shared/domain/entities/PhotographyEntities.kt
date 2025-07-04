@@ -40,7 +40,7 @@ enum class LensType {
 
 @Serializable
 data class CameraBody(
-    override val id: Int = 0,
+
     val name: String,
     val sensorType: String, // "Full Frame", "Crop", "Micro Four Thirds", "Medium Format"
     val sensorWidth: Double,
@@ -125,7 +125,7 @@ data class CameraBody(
 
 @Serializable
 data class Lens(
-    override val id: Int = 0,
+
     val name: String,
     val minFocalLength: Double,
     val maxFocalLength: Double,
@@ -237,7 +237,7 @@ data class Lens(
 
 @Serializable
 data class LensCameraCompatibility(
-    override val id: Int = 0,
+
     val lensId: Int,
     val cameraBodyId: Int,
     val isNativeMount: Boolean,
@@ -301,7 +301,6 @@ data class LensCameraCompatibility(
 
 @Serializable
 data class UserCameraBody(
-    override val id: Int = 0,
     val userId: String,
     val cameraBodyId: Int,
     val isFavorite: Boolean = false,

@@ -11,39 +11,15 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 class Subscription(
-    userId: String,
-    productId: String,
-    transactionId: String,
-    purchaseToken: String,
-    status: SubscriptionStatus,
-    startDate: Instant,
-    expirationDate: Instant,
-    autoRenewing: Boolean = true
+    val userId: String,
+    val productId: String,
+    val transactionId: String,
+    val purchaseToken: String,
+    val status: SubscriptionStatus,
+    val startDate: Instant,
+    val expirationDate: Instant,
+    val autoRenewing: Boolean = true
 ) : Entity() {
-
-    var userId: String = userId
-        private set
-
-    var productId: String = productId
-        private set
-
-    var transactionId: String = transactionId
-        private set
-
-    var purchaseToken: String = purchaseToken
-        private set
-
-    var status: SubscriptionStatus = status
-        private set
-
-    var startDate: Instant = startDate
-        private set
-
-    var expirationDate: Instant = expirationDate
-        private set
-
-    var autoRenewing: Boolean = autoRenewing
-        private set
 
     var lastVerified: Instant? = null
         private set
@@ -53,6 +29,27 @@ class Subscription(
 
     var renewalCount: Int = 0
         private set
+
+    private var _status: SubscriptionStatus = status
+    private var _transactionId: String = transactionId
+    private var _purchaseToken: String = purchaseToken
+    private var _expirationDate: Instant = expirationDate
+    private var _autoRenewing: Boolean = autoRenewing
+
+    val currentStatus: SubscriptionStatus
+        get() = _status
+
+    val currentTransactionId: String
+        get() = _transactionId
+
+    val currentPurchaseToken: String
+        get() = _purchaseToken
+
+    val currentExpirationDate: Instant
+        get() = _expirationDate
+
+    val currentAutoRenewing: Boolean
+        get() = _autoRenewing
 
     init {
         require(userId.isNotBlank()) { "User ID cannot be empty" }
@@ -66,14 +63,12 @@ class Subscription(
      * Updates the subscription status
      */
     fun updateStatus(newStatus: SubscriptionStatus) {
-        if (status != newStatus) {
-            status = newStatus
+        if (_status != newStatus) {
+            _status = newStatus
 
             if (newStatus == SubscriptionStatus.CANCELLED && cancelledAt == null) {
                 cancelledAt = Clock.System.now()
             }
-
-            markAsModified()
         }
     }
 
@@ -81,31 +76,28 @@ class Subscription(
      * Renews the subscription
      */
     fun renew(newExpirationDate: Instant, newTransactionId: String? = null) {
-        require(newExpirationDate > expirationDate) {
+        require(newExpirationDate > _expirationDate) {
             "New expiration date must be after current expiration date"
         }
 
-        expirationDate = newExpirationDate
+        _expirationDate = newExpirationDate
         renewalCount++
-        status = SubscriptionStatus.ACTIVE
+        _status = SubscriptionStatus.ACTIVE
         cancelledAt = null
         lastVerified = Clock.System.now()
 
         newTransactionId?.let {
-            transactionId = it
+            _transactionId = it
         }
-
-        markAsModified()
     }
 
     /**
      * Cancels the subscription
      */
     fun cancel() {
-        status = SubscriptionStatus.CANCELLED
+        _status = SubscriptionStatus.CANCELLED
         cancelledAt = Clock.System.now()
-        autoRenewing = false
-        markAsModified()
+        _autoRenewing = false
     }
 
     /**
@@ -113,8 +105,7 @@ class Subscription(
      */
     fun updatePurchaseToken(newToken: String) {
         require(newToken.isNotBlank()) { "Purchase token cannot be empty" }
-        purchaseToken = newToken
-        markAsModified()
+        _purchaseToken = newToken
     }
 
     /**
@@ -122,29 +113,28 @@ class Subscription(
      */
     fun markAsVerified() {
         lastVerified = Clock.System.now()
-        markAsModified()
     }
 
     /**
      * Checks if subscription is currently active
      */
     fun isActive(): Boolean {
-        return status == SubscriptionStatus.ACTIVE &&
-                expirationDate > Clock.System.now()
+        return _status == SubscriptionStatus.ACTIVE &&
+                _expirationDate > Clock.System.now()
     }
 
     /**
      * Checks if subscription is expired
      */
     fun isExpired(): Boolean {
-        return expirationDate <= Clock.System.now()
+        return _expirationDate <= Clock.System.now()
     }
 
     /**
      * Checks if subscription is in grace period
      */
     fun isInGracePeriod(): Boolean {
-        return status == SubscriptionStatus.GRACE_PERIOD
+        return _status == SubscriptionStatus.GRACE_PERIOD
     }
 
     /**
@@ -161,7 +151,7 @@ class Subscription(
      */
     fun getDaysUntilExpiration(): Int {
         val now = Clock.System.now()
-        val secondsUntilExpiration = expirationDate.epochSeconds - now.epochSeconds
+        val secondsUntilExpiration = _expirationDate.epochSeconds - now.epochSeconds
         return (secondsUntilExpiration / 86400).toInt() // 86400 seconds in a day
     }
 
@@ -169,16 +159,14 @@ class Subscription(
      * Updates expiration date (for grace period extensions)
      */
     fun updateExpirationDate(newExpirationDate: Instant) {
-        expirationDate = newExpirationDate
-        markAsModified()
+        _expirationDate = newExpirationDate
     }
 
     /**
      * Sets auto-renewal preference
      */
     fun setAutoRenewing(autoRenew: Boolean) {
-        autoRenewing = autoRenew
-        markAsModified()
+        _autoRenewing = autoRenew
     }
 
     companion object {

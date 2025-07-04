@@ -1,5 +1,4 @@
-//shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/domain/entities/HourlyForecast.kt
-
+// shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/domain/entities/HourlyForecast.kt
 package com.x3squaredcircles.pixmap.shared.domain.entities
 
 import com.x3squaredcircles.pixmap.shared.domain.common.Entity
@@ -12,7 +11,6 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class HourlyForecast(
-    override val id: Int = 0,
     val weatherId: Int,
     val dateTime: Instant,
     val temperature: Double,
@@ -50,8 +48,8 @@ data class HourlyForecast(
             dateTime: Instant,
             temperature: Double,
             feelsLike: Double,
-            description: String,
-            icon: String,
+            description: String = "",
+            icon: String = "",
             wind: WindInfo,
             humidity: Int,
             pressure: Int,
@@ -78,95 +76,103 @@ data class HourlyForecast(
                 dewPoint = dewPoint
             )
         }
-    }
 
-    /**
-     * Gets the temperature difference between actual and feels like
-     */
-    fun getTemperatureDifference(): Double {
-        return feelsLike - temperature
-    }
-
-    /**
-     * Gets a comfort description based on feels like temperature
-     */
-    fun getComfortDescription(): String {
-        return when {
-            feelsLike < -10 -> "Dangerously Cold"
-            feelsLike < 0 -> "Very Cold"
-            feelsLike < 10 -> "Cold"
-            feelsLike < 20 -> "Cool"
-            feelsLike < 25 -> "Comfortable"
-            feelsLike < 30 -> "Warm"
-            feelsLike < 35 -> "Hot"
-            feelsLike < 40 -> "Very Hot"
-            else -> "Dangerously Hot"
+        /**
+         * Factory method to create an hourly forecast with ID (for ORM/repository use)
+         */
+        fun create(
+            id: Int,
+            weatherId: Int,
+            dateTime: Instant,
+            temperature: Double,
+            feelsLike: Double,
+            description: String = "",
+            icon: String = "",
+            wind: WindInfo,
+            humidity: Int,
+            pressure: Int,
+            clouds: Int,
+            uvIndex: Double,
+            probabilityOfPrecipitation: Double,
+            visibility: Int,
+            dewPoint: Double
+        ): HourlyForecast {
+            val forecast = HourlyForecast(
+                weatherId = weatherId,
+                dateTime = dateTime,
+                temperature = temperature,
+                feelsLike = feelsLike,
+                description = description,
+                icon = icon,
+                wind = wind,
+                humidity = humidity,
+                pressure = pressure,
+                clouds = clouds,
+                uvIndex = uvIndex,
+                probabilityOfPrecipitation = probabilityOfPrecipitation,
+                visibility = visibility,
+                dewPoint = dewPoint
+            )
+            forecast.id = id
+            return forecast
         }
     }
 
     /**
-     * Gets visibility description
+     * Updates the forecast with new temperature data
      */
-    fun getVisibilityDescription(): String {
+    fun updateTemperature(newTemperature: Double, newFeelsLike: Double): HourlyForecast {
+        require(newTemperature >= -273.15) { "Temperature cannot be below absolute zero" }
+        require(newFeelsLike >= -273.15) { "Feels like temperature cannot be below absolute zero" }
+
+        return copy(
+            temperature = newTemperature,
+            feelsLike = newFeelsLike
+        )
+    }
+
+    /**
+     * Updates the forecast with new weather conditions
+     */
+    fun updateWeatherConditions(newDescription: String, newIcon: String): HourlyForecast {
+        return copy(
+            description = newDescription,
+            icon = newIcon
+        )
+    }
+
+    /**
+     * Updates the forecast with new wind information
+     */
+    fun updateWind(newWind: WindInfo): HourlyForecast {
+        return copy(wind = newWind)
+    }
+
+    /**
+     * Gets a summary of the forecast for display
+     */
+    fun getSummary(): String {
+        return "$temperature°C, $description"
+    }
+
+    /**
+     * Checks if this forecast has precipitation
+     */
+    fun hasPrecipitation(): Boolean {
+        return probabilityOfPrecipitation > 0.0
+    }
+
+    /**
+     * Gets the comfort level based on temperature and humidity
+     */
+    fun getComfortLevel(): String {
         return when {
-            visibility >= 10000 -> "Excellent (${visibility / 1000}+ km)"
-            visibility >= 5000 -> "Good (${visibility / 1000} km)"
-            visibility >= 2000 -> "Moderate (${visibility / 1000} km)"
-            visibility >= 1000 -> "Poor (${visibility} m)"
-            else -> "Very Poor (${visibility} m)"
-        }
-    }
-
-    /**
-     * Gets precipitation probability as percentage
-     */
-    fun getPrecipitationPercentage(): Int {
-        return (probabilityOfPrecipitation * 100).toInt()
-    }
-
-    /**
-     * Checks if rain is likely (>50% probability)
-     */
-    fun isRainLikely(): Boolean {
-        return probabilityOfPrecipitation > 0.5
-    }
-
-    /**
-     * Checks if conditions are good for outdoor activities
-     */
-    fun isGoodForOutdoor(): Boolean {
-        return probabilityOfPrecipitation < 0.3 &&
-                wind.speed < 25.0 &&
-                visibility > 5000 &&
-                temperature > 5 &&
-                temperature < 35
-    }
-
-    /**
-     * Gets a short weather summary
-     */
-    fun getShortSummary(): String {
-        val temp = "${temperature.toInt()}°"
-        val feels = if (kotlin.math.abs(getTemperatureDifference()) > 2) {
-            " (feels ${feelsLike.toInt()}°)"
-        } else ""
-        return "$description, $temp$feels"
-    }
-
-    /**
-     * Gets detailed weather information
-     */
-    fun getDetailedInfo(): String {
-        return buildString {
-            append("${description}, ${temperature.toInt()}°")
-            if (kotlin.math.abs(getTemperatureDifference()) > 2) {
-                append(" (feels ${feelsLike.toInt()}°)")
-            }
-            append(", ${wind.toSimpleString()}")
-            append(", ${humidity}% humidity")
-            if (probabilityOfPrecipitation > 0.1) {
-                append(", ${getPrecipitationPercentage()}% chance rain")
-            }
+            temperature < 0 -> "Very Cold"
+            temperature < 10 -> "Cold"
+            temperature < 20 -> "Cool"
+            temperature < 25 -> "Comfortable"
+            temperature < 30 -> "Warm"
+            else -> "Hot"
         }
     }
 }

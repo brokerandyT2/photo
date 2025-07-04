@@ -10,7 +10,7 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class TipType(
-    override val id: Int = 0,
+
     val name: String,
     val i8n: String = "en-US"
 ) : Entity() {

@@ -1,5 +1,4 @@
-//shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/domain/common/Result.kt
-
+// shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/domain/common/Result.kt
 package com.x3squaredcircles.pixmap.shared.domain.common
 
 import kotlinx.serialization.Serializable
@@ -8,7 +7,7 @@ import kotlinx.serialization.Serializable
  * Represents the result of an operation that can either succeed or fail
  */
 @Serializable
-sealed class Result<out T> {
+sealed class Result<T> {
 
     abstract val isSuccess: Boolean
     abstract val isFailure: Boolean

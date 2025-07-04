@@ -10,7 +10,7 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class Tip(
-    override val id: Int = 0,
+
     val tipTypeId: Int,
     val title: String,
     val content: String,
@@ -29,11 +29,15 @@ data class Tip(
         /**
          * Factory method to create a new tip
          */
-        fun create(tipTypeId: Int, title: String, content: String): Tip {
+        fun create(tipTypeId: Int, title: String, content: String, fstop: String, iso: String, shutterSpeed: String, i8n: String): Tip {
             return Tip(
                 tipTypeId = tipTypeId,
                 title = title,
-                content = content
+                content = content,
+                fstop = fstop,
+                shutterSpeed = shutterSpeed,
+                iso = iso,
+                i8n = i8n
             )
         }
     }

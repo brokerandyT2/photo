@@ -1,3 +1,4 @@
+// shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/di/SubscriptionModule.kt
 package com.x3squaredcircles.pixmap.shared.di
 
 import com.x3squaredcircles.pixmap.shared.application.handlers.commands.*
@@ -8,7 +9,6 @@ import com.x3squaredcircles.pixmap.shared.application.interfaces.services.ISubsc
 import com.x3squaredcircles.pixmap.shared.infrastructure.data.repositories.SubscriptionRepositoryImpl
 import com.x3squaredcircles.pixmap.shared.infrastructure.services.SubscriptionServiceImpl
 import org.koin.core.module.dsl.bind
-import org.koin.core.module.dsl.factoryOf
 import org.koin.core.module.dsl.singleOf
 import org.koin.dsl.module
 
@@ -27,21 +27,19 @@ val subscriptionModule = module {
     // single<ISubscriptionStoreService> { AndroidBillingService(get()) }
 
     // Command Handlers
-    factoryOf(::CreateSubscriptionCommandHandler)
-    factoryOf(::UpdateSubscriptionStatusCommandHandler)
-    factoryOf(::RenewSubscriptionCommandHandler)
-    factoryOf(::CancelSubscriptionCommandHandler)
-    factoryOf(::UpdatePurchaseTokenCommandHandler)
-    factoryOf(::VerifySubscriptionCommandHandler)
-    factoryOf(::UpdateSubscriptionExpirationCommandHandler)
+    factory { CreateSubscriptionCommandHandler(get(), get()) }
+    factory { UpdateSubscriptionStatusCommandHandler(get(), get()) }
+    factory { RenewSubscriptionCommandHandler(get(), get()) }
+    factory { CancelSubscriptionCommandHandler(get(), get()) }
+    factory { UpdatePurchaseTokenCommandHandler(get(), get()) }
+    factory { UpdateSubscriptionExpirationCommandHandler(get(), get()) }
 
     // Query Handlers
-    factoryOf(::GetActiveSubscriptionQueryHandler)
-    factoryOf(::GetSubscriptionByTransactionIdQueryHandler)
-    factoryOf(::GetSubscriptionByPurchaseTokenQueryHandler)
-    factoryOf(::GetSubscriptionByIdQueryHandler)
-    factoryOf(::GetSubscriptionsByUserIdQueryHandler)
-    factoryOf(::GetExpiredSubscriptionsQueryHandler)
-    factoryOf(::GetSubscriptionsNeedingVerificationQueryHandler)
-    factoryOf(::HasActiveSubscriptionQueryHandler)
+    factory { GetActiveSubscriptionQueryHandler(get(), get()) }
+    factory { GetSubscriptionByTransactionIdQueryHandler(get(), get()) }
+    factory { GetSubscriptionByPurchaseTokenQueryHandler(get(), get()) }
+    factory { GetSubscriptionByIdQueryHandler(get(), get()) }
+    factory { GetSubscriptionsByUserIdQueryHandler(get(), get()) }
+    factory { GetExpiredSubscriptionsQueryHandler(get(), get()) }
+    factory { HasActiveSubscriptionQueryHandler(get(), get()) }
 }
