@@ -1,9 +1,9 @@
 // shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/settings/CreateSettingCommandValidator.kt
 package com.x3squaredcircles.pixmap.shared.application.settings
 
+import com.x3squaredcircles.pixmap.shared.application.commands.CreateSettingCommand
 import com.x3squaredcircles.pixmap.shared.application.common.models.ValidationResult
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IValidator
-
 
 /**
  * Provides validation rules for the [CreateSettingCommand] class.

@@ -1,6 +1,7 @@
 // shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/application/handlers/commands/DeleteSettingCommandHandler.kt
 package com.x3squaredcircles.pixmap.shared.application.handlers.commands
 
+import com.x3squaredcircles.pixmap.shared.application.common.models.Result
 import com.x3squaredcircles.pixmap.shared.application.settings.DeleteSettingCommand
 import com.x3squaredcircles.pixmap.shared.application.events.SettingErrorEvent
 import com.x3squaredcircles.pixmap.shared.application.events.SettingErrorType
@@ -15,9 +16,9 @@ import com.x3squaredcircles.pixmap.shared.domain.exceptions.SettingDomainExcepti
 class DeleteSettingCommandHandler(
     private val settingRepository: ISettingRepository,
     private val mediator: IMediator
-) : IRequestHandler<DeleteSettingCommand, Boolean> {
+) : IRequestHandler<DeleteSettingCommand, Result<Boolean>> {
 
-    override suspend fun handle(request: DeleteSettingCommand): Boolean {
+    override suspend fun handle(request: DeleteSettingCommand):  Result<Boolean> {
         try {
             val settingResult = settingRepository.getByKeyAsync(request.key)
 
@@ -45,7 +46,7 @@ class DeleteSettingCommandHandler(
                 throw RuntimeException("Failed to delete setting: ${result.errorMessage}")
             }
 
-            return true
+            return Result.success(true)
         } catch (ex: SettingDomainException) {
             when (ex.code) {
                 "READ_ONLY_SETTING" -> {

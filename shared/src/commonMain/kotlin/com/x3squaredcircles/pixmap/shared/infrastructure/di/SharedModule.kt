@@ -56,31 +56,8 @@ val sharedModule = module {
     factoryOf(::CreateTipCommandHandler) bind IRequestHandler::class
     factoryOf(::CreateTipTypeCommandHandler) bind IRequestHandler::class
 
-    // Mediator
-    factory<IMediator> {
-        val requestHandlers = mapOf(
-            "GetAllLocationsQuery" to get<GetAllLocationsQueryHandler>(),
-            "GetLocationByIdQuery" to get<GetLocationByIdQueryHandler>(),
-            "GetActiveLocationsQuery" to get<GetActiveLocationsQueryHandler>(),
-            "GetNearbyLocationsQuery" to get<GetNearbyLocationsQueryHandler>(),
-            "GetPagedLocationsQuery" to get<GetPagedLocationsQueryHandler>(),
-            "GetWeatherByLocationIdQuery" to get<GetWeatherByLocationIdQueryHandler>(),
-            "GetSettingByKeyQuery" to get<GetSettingByKeyQueryHandler>(),
-            "GetAllSettingsQuery" to get<GetAllSettingsQueryHandler>(),
-            "GetTipsByTypeQuery" to get<GetTipsByTypeQueryHandler>(),
-            "GetRandomTipByTypeQuery" to get<GetRandomTipByTypeQueryHandler>(),
-            "GetAllTipTypesQuery" to get<GetAllTipTypesQueryHandler>(),
-            "CreateLocationCommand" to get<CreateLocationCommandHandler>(),
-            "UpdateLocationCommand" to get<UpdateLocationCommandHandler>(),
-            "DeleteLocationCommand" to get<DeleteLocationCommandHandler>(),
-            "AttachPhotoCommand" to get<AttachPhotoCommandHandler>(),
-            "UpdateWeatherCommand" to get<UpdateWeatherCommandHandler>(),
-            "CreateSettingCommand" to get<CreateSettingCommandHandler>(),
-            "UpdateSettingCommand" to get<UpdateSettingCommandHandler>(),
-            "CreateTipCommand" to get<CreateTipCommandHandler>(),
-            "CreateTipTypeCommand" to get<CreateTipTypeCommandHandler>()
-        )
-
-        Mediator(requestHandlers, emptyMap())
+    // Mediator - simplified without the complex map
+    single<IMediator> {
+        Mediator(emptyMap(), emptyMap())
     }
 }

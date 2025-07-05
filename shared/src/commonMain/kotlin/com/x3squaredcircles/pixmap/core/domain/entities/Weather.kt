@@ -5,6 +5,8 @@ import com.x3squaredcircles.pixmap.shared.domain.common.AggregateRoot
 import com.x3squaredcircles.pixmap.shared.domain.valueobjects.Coordinate
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.todayIn
 import kotlinx.serialization.Serializable
 
 /**
@@ -17,8 +19,8 @@ data class Weather(
     val timezone: String,
     val timezoneOffset: Int,
     val lastUpdate: Instant,
-    val forecasts: List<WeatherForecast> = emptyList(),
-    val hourlyForecasts: List<HourlyForecast> = emptyList()
+    var forecasts: List<WeatherForecast> = emptyList(),
+    var hourlyForecasts: List<HourlyForecast> = emptyList()
 ) : AggregateRoot() {
 
     init {
@@ -56,7 +58,21 @@ data class Weather(
             return weather
         }
     }
+    fun updateHourlyForecasts(newHourlyForecasts: List<HourlyForecast>) {
+        // Update the hourly forecasts for this weather entity
+        this.hourlyForecasts = newHourlyForecasts.toMutableList()
+    }
 
+    fun getCurrentForecast(): WeatherForecast? {
+        // Get the current day's forecast (today's forecast)
+        val today = Clock.System.todayIn(TimeZone.currentSystemDefault())
+        return forecasts.firstOrNull { it.date == today }
+    }
+
+    fun updateForecasts(newForecasts: List<WeatherForecast>) {
+        // Update the forecasts for this weather entity
+        this.forecasts = newForecasts.toMutableList()
+    }
     /**
      * Updates weather data with new forecasts
      */

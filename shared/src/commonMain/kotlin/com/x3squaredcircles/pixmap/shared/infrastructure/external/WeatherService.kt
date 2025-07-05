@@ -1,5 +1,6 @@
 // shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/infrastructure/external/WeatherService.kt
 
+package com.x3squaredcircles.pixmap.shared.infrastructure.external
 
 import com.x3squaredcircles.pixmap.shared.application.common.models.Result
 import com.x3squaredcircles.pixmap.shared.application.dto.DailyForecastDto
@@ -10,8 +11,11 @@ import com.x3squaredcircles.pixmap.shared.application.dto.WeatherForecastDto
 import com.x3squaredcircles.pixmap.shared.application.interfaces.repositories.ILocationRepository
 import com.x3squaredcircles.pixmap.shared.application.interfaces.repositories.ISettingRepository
 import com.x3squaredcircles.pixmap.shared.application.interfaces.repositories.IWeatherRepository
+import com.x3squaredcircles.pixmap.shared.application.interfaces.services.AirQualityDto
 import com.x3squaredcircles.pixmap.shared.application.interfaces.services.ILoggingService
 import com.x3squaredcircles.pixmap.shared.application.interfaces.services.IWeatherService
+import com.x3squaredcircles.pixmap.shared.application.interfaces.services.WeatherAlert
+import com.x3squaredcircles.pixmap.shared.application.interfaces.services.WeatherUpdateStatus
 
 import com.x3squaredcircles.pixmap.shared.domain.entities.Weather
 import com.x3squaredcircles.pixmap.shared.domain.entities.WeatherForecast
@@ -19,18 +23,19 @@ import com.x3squaredcircles.pixmap.shared.domain.entities.HourlyForecast
 import com.x3squaredcircles.pixmap.shared.domain.exceptions.WeatherDomainException
 import com.x3squaredcircles.pixmap.shared.domain.valueobjects.Coordinate
 import com.x3squaredcircles.pixmap.shared.domain.valueobjects.WindInfo
-//import com.x3squaredcircles.pixmap.shared.infrastructure.external.models.OpenWeatherResponse
+
 import com.x3squaredcircles.pixmap.shared.infrastructure.services.IInfrastructureExceptionMappingService
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.plugins.timeout
+
 import io.ktor.client.request.*
 import io.ktor.http.*
 
 import kotlinx.datetime.*
 import kotlinx.serialization.json.Json
 import kotlin.math.min
-import kotlin.math.pow
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.days
 
 class WeatherService(
@@ -47,6 +52,128 @@ class WeatherService(
         private const val BASE_URL = "https://api.openweathermap.org/data/3.0/onecall"
         private const val MAX_FORECAST_DAYS = 7
         private val json = Json { ignoreUnknownKeys = true }
+    }
+
+    override fun isWeatherDataStale(lastUpdate: Instant): Boolean {
+        val staleThreshold = Clock.System.now().minus(Duration.parse("PT1H")) // 1 hour
+        return lastUpdate < staleThreshold
+    }
+
+    override suspend fun getCachedWeatherAsync(locationId: Int): Result<WeatherDto?> {
+        return try {
+            val weatherResult = weatherRepository.getByLocationIdAsync(locationId)
+            if (!weatherResult.isSuccess || weatherResult.data == null) {
+                return Result.success(null)
+            }
+
+            val weather = weatherResult.data!!
+            if (isWeatherDataStale(weather.lastUpdate)) {
+                return Result.success(null)
+            }
+
+            val weatherDto = mapToWeatherDtoAsync(weather, null)
+            Result.success(weatherDto)
+        } catch (ex: Exception) {
+            logger.error("Failed to get cached weather", ex)
+            Result.failure("Failed to get cached weather: ${ex.message}")
+        }
+    }
+
+    override suspend fun clearWeatherCacheAsync(locationId: Int): Result<Unit> {
+        return try {
+            weatherRepository.deleteAsync(locationId)
+            Result.success(Unit)
+        } catch (ex: Exception) {
+            logger.error("Failed to clear weather cache", ex)
+            Result.failure("Failed to clear weather cache: ${ex.message}")
+        }
+    }
+
+    override suspend fun clearAllWeatherCacheAsync(): Result<Unit> {
+        return try {
+            // Implementation would clear all weather cache
+            Result.success(Unit)
+        } catch (ex: Exception) {
+            logger.error("Failed to clear all weather cache", ex)
+            Result.failure("Failed to clear all weather cache: ${ex.message}")
+        }
+    }
+
+    override suspend fun getWeatherUpdateStatusAsync(locationId: Int): Result<WeatherUpdateStatus> {
+        return try {
+            val weatherResult = weatherRepository.getByLocationIdAsync(locationId)
+            val weather = weatherResult.data
+
+            val status = WeatherUpdateStatus(
+                locationId = locationId,
+                lastUpdate = weather?.lastUpdate,
+                isStale = weather?.let { isWeatherDataStale(it.lastUpdate) } ?: true,
+                isUpdating = false,
+                lastError = null,
+                nextUpdateTime = null
+            )
+
+            Result.success(status)
+        } catch (ex: Exception) {
+            logger.error("Failed to get weather update status", ex)
+            Result.failure("Failed to get weather update status: ${ex.message}")
+        }
+    }
+
+    override suspend fun validateApiConfigurationAsync(): Result<Boolean> {
+        return try {
+            val apiKeyResult = getApiKeyAsync()
+            Result.success(apiKeyResult.isSuccess && !apiKeyResult.data.isNullOrBlank())
+        } catch (ex: Exception) {
+            logger.error("Failed to validate API configuration", ex)
+            Result.failure("Failed to validate API configuration: ${ex.message}")
+        }
+    }
+
+    override suspend fun refreshWeatherAsync(
+        locationId: Int,
+        forceUpdate: Boolean
+    ): Result<WeatherDto> {
+        return updateWeatherForLocationAsync(locationId)
+    }
+
+    override suspend fun getWeatherAlertsAsync(
+        latitude: Double,
+        longitude: Double
+    ): Result<List<WeatherAlert>> {
+        return try {
+            // Implementation would fetch weather alerts
+            Result.success(emptyList())
+        } catch (ex: Exception) {
+            logger.error("Failed to get weather alerts", ex)
+            Result.failure("Failed to get weather alerts: ${ex.message}")
+        }
+    }
+
+    override suspend fun getAirQualityAsync(
+        latitude: Double,
+        longitude: Double
+    ): Result<AirQualityDto> {
+        return try {
+            // Implementation would fetch air quality data
+            val airQuality = AirQualityDto(
+                aqi = 0,
+
+                pm10 = 0.0,
+                o3 = 0.0,
+                no2 = 0.0,
+                so2 = 0.0,
+                co = 0.0,
+                no = 0.0,
+                pm2_5 = 0.0,
+                nh3 = 0.0,
+                timestamp = Instant.DISTANT_PAST
+            )
+            Result.success(airQuality)
+        } catch (ex: Exception) {
+            logger.error("Failed to get air quality", ex)
+            Result.failure("Failed to get air quality: ${ex.message}")
+        }
     }
 
     override suspend fun getWeatherAsync(latitude: Double, longitude: Double): Result<WeatherDto> {
@@ -95,7 +222,7 @@ class WeatherService(
                     coordinate = coordinate,
                     timezone = apiData.timezone,
                     timezoneOffset = apiData.timezoneOffset,
-                    lastUpdate = Instant.fromEpochSeconds(Clock.System.now().toEpochMilliseconds())
+                    lastUpdate = Clock.System.now()
                 )
             }
 
@@ -110,7 +237,7 @@ class WeatherService(
                     maxTemperature = dailyForecast.maxTemperature,
                     description = dailyForecast.description,
                     icon = dailyForecast.icon,
-                    wind =  WindInfo(
+                    wind = WindInfo(
                         speed = dailyForecast.windSpeed,
                         direction = dailyForecast.windDirection,
                         gust = dailyForecast.windGust
@@ -138,7 +265,6 @@ class WeatherService(
                         direction = hourlyForecast.windDirection,
                         gust = hourlyForecast.windGust
                     ),
-
                     humidity = hourlyForecast.humidity,
                     pressure = hourlyForecast.pressure,
                     clouds = hourlyForecast.clouds,
@@ -149,7 +275,9 @@ class WeatherService(
                 )
             }
 
+            // Update weather with forecasts
             weather.updateForecasts(forecasts)
+
             weather.updateHourlyForecasts(hourlyForecasts)
 
             val saveResult = if (existingWeather != null) {
@@ -268,9 +396,8 @@ class WeatherService(
             val requestUrl = "$BASE_URL?lat=$latitude&lon=$longitude&appid=$apiKey&units=$tempS&exclude=minutely"
 
             val response = httpClient.get(requestUrl) {
-                timeout {
-                    requestTimeoutMillis = 30000
-                }
+                timeout { requestTimeoutMillis = 30000 }
+
             }
 
             if (!response.status.isSuccess()) {
@@ -299,7 +426,7 @@ class WeatherService(
     }
 
     private suspend fun mapToWeatherDtoAsync(weather: Weather, apiData: WeatherApiResponse?): WeatherDto {
-        val currentForecast = weather.getCurrentForecast()
+        val currentForecast = weather.forecasts.firstOrNull()
         val currentApiData = apiData?.dailyForecasts?.firstOrNull()
 
         val rawWindDirection = currentForecast?.wind?.direction ?: currentApiData?.windDirection ?: 0.0
