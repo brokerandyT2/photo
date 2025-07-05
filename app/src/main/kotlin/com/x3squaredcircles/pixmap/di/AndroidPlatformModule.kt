@@ -25,6 +25,6 @@ val androidPlatformModule = module {
     singleOf(::AndroidMediaService) { bind<IMediaService>() }
 
     // Android-specific implementations
-    singleOf(::AndroidValidationService) { bind<IValidationService>() }
-    singleOf(::AndroidCacheService) { bind<ICacheService>() }
+   // singleOf(::AndroidValidationService) { bind<IValidationService>() }
+  //  singleOf(::AndroidCacheService) { bind<ICacheService>() }
 }

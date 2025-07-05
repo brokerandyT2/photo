@@ -23,31 +23,3 @@ class AndroidCameraService(private val context: Context) : ICameraService {
 
     override suspend fun requestPermission(): Boolean = false
 }
-
-class AndroidLocationService(private val context: Context) : ILocationService {
-    // Implementation placeholder
-}
-
-class AndroidGeolocationService(private val context: Context) : IGeolocationService {
-    // Implementation placeholder
-}
-
-class AndroidNotificationService(private val context: Context) : INotificationService {
-    // Implementation placeholder
-}
-
-class AndroidFileService(private val context: Context) : IFileService {
-    // Implementation placeholder
-}
-
-class AndroidMediaService(private val context: Context) : IMediaService {
-    // Implementation placeholder
-}
-
-class AndroidValidationService(private val context: Context) : IValidationService {
-    // Implementation placeholder
-}
-
-class AndroidCacheService(private val context: Context) : ICacheService {
-    // Implementation placeholder
-}

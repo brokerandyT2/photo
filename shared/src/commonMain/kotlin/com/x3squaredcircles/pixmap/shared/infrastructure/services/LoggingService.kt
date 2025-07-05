@@ -81,21 +81,6 @@ class LoggingService(
         logMessage(LogLevel.WARNING, message, null, tag)
     }
 
-     fun logError(message: String, tag: String?) {
-        logMessage(LogLevel.ERROR, message, null, tag)
-    }
-
-     fun logError(message: String, exception: Throwable, tag: String?) {
-        logMessage(LogLevel.ERROR, message, exception, tag)
-    }
-
-     fun logCritical(message: String, tag: String?) {
-        logMessage(LogLevel.CRITICAL, message, null, tag)
-    }
-
-     fun logCritical(message: String, exception: Throwable, tag: String?) {
-        logMessage(LogLevel.CRITICAL, message, exception, tag)
-    }
     override fun logError(message: String, exception: Throwable?, tag: String?) {
         logMessage(LogLevel.ERROR, message, exception, tag)
     }

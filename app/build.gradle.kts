@@ -102,6 +102,8 @@ dependencies {
     // Location services
     implementation("com.google.android.gms:play-services-location:21.0.1")
     implementation("com.google.android.gms:play-services-maps:18.2.0")
+    implementation(libs.play.services.basement)
+    implementation(libs.play.services.basement)
 
     // Testing
     testImplementation(libs.junit)

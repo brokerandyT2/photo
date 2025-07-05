@@ -30,6 +30,23 @@ class AddLocationScreenModel(
     private var lastOperation: (() -> Unit)? = null
 
     /**
+     * Update the title field
+     */
+    fun updateTitle(title: String) {
+        _uiState.value = _uiState.value.copy(
+            title = title,
+            titleError = "" // Clear error when user starts typing
+        )
+    }
+
+    /**
+     * Update the description field
+     */
+    fun updateDescription(description: String) {
+        _uiState.value = _uiState.value.copy(description = description)
+    }
+
+    /**
      * Load existing location for editing
      */
     fun loadLocation(locationId: Int) {
@@ -43,9 +60,10 @@ class AddLocationScreenModel(
                 )
 
                 val query = GetLocationByIdQuery(locationId)
-                val locationDto = mediator.send(query)
+                val result = mediator.send(query)
 
-                if (locationDto != null) {
+                if (result.isSuccess && result.data != null) {
+                    val locationDto = result.data!!
                     _uiState.value = _uiState.value.copy(
                         id = locationDto.id,
                         title = locationDto.title,
@@ -83,7 +101,7 @@ class AddLocationScreenModel(
 
                 val result = geolocationService.getCurrentLocationAsync()
 
-                if (result.isSuccess) {
+                if (result.isSuccess && result.data != null) {
                     val location = result.data!!
                     _uiState.value = _uiState.value.copy(
                         latitude = location.latitude,
@@ -155,21 +173,20 @@ class AddLocationScreenModel(
                     _uiState.value = currentState.copy(
                         titleError = validationErrors["title"] ?: "",
                         isError = true,
-                        errorMessage = validationErrors.values.first()
+                        errorMessage = "Please fix the validation errors"
                     )
                     return@launch
                 }
 
                 lastOperation = { saveLocation() }
                 _uiState.value = currentState.copy(
-                    isBusy = true,
                     isSaving = true,
                     isError = false,
-                    titleError = ""
+                    errorMessage = ""
                 )
 
                 val command = SaveLocationCommand(
-                    id = if (currentState.isNewLocation) null else currentState.id,
+                    id = if (currentState.isNewLocation) 0 else currentState.id,
                     title = currentState.title,
                     description = currentState.description,
                     latitude = currentState.latitude,
@@ -182,8 +199,7 @@ class AddLocationScreenModel(
                 val result = mediator.send(command)
 
                 if (result.isSuccess) {
-                    _uiState.value = currentState.copy(
-                        isBusy = false,
+                    _uiState.value = _uiState.value.copy(
                         isSaving = false,
                         saveCompleted = true
                     )
@@ -192,45 +208,22 @@ class AddLocationScreenModel(
                 }
 
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    isBusy = false,
-                    isSaving = false
-                )
                 handleError("Error saving location: ${e.message}")
             }
         }
     }
 
     /**
-     * Reset form for new location entry
+     * Reset for new location entry
      */
     fun resetForNewLocation() {
         _uiState.value = AddLocationUiState()
-        startLocationTracking()
     }
 
     /**
-     * Update title field
-     */
-    fun updateTitle(title: String) {
-        _uiState.value = _uiState.value.copy(
-            title = title,
-            titleError = "" // Clear error when user types
-        )
-    }
-
-    /**
-     * Update description field
-     */
-    fun updateDescription(description: String) {
-        _uiState.value = _uiState.value.copy(description = description)
-    }
-
-    /**
-     * Retry last failed operation
+     * Retry the last failed operation
      */
     fun retryLastOperation() {
-        clearError()
         lastOperation?.invoke()
     }
 
@@ -338,5 +331,6 @@ data class AddLocationUiState(
                 latitude != 0.0 &&
                 longitude != 0.0 &&
                 !isBusy &&
+                !isSaving &&
                 titleError.isBlank()
 }

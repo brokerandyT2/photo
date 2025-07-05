@@ -4,13 +4,14 @@ package com.x3squaredcircles.pixmap.androidapp.services
 import android.app.Activity
 import android.content.Context
 import com.android.billingclient.api.*
+import com.google.android.gms.common.util.Clock
 import com.x3squaredcircles.pixmap.shared.application.common.models.Result
 import com.x3squaredcircles.pixmap.shared.application.dto.*
 import com.x3squaredcircles.pixmap.shared.application.interfaces.services.ISubscriptionStoreService
 import com.x3squaredcircles.pixmap.shared.domain.entities.BillingPeriod
 import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.datetime.Clock
-import kotlinx.datetime.Instant
+import java.time.Instant
+
 import kotlin.coroutines.resume
 
 /**
@@ -57,7 +58,7 @@ class AndroidBillingService(
                     SubscriptionVerificationDto(
                         subscriptionId = 0,
                         isValid = false,
-                        verificationDate = Clock.System.now(),
+                        verificationDate = Clock.system.now(),
                         errorMessage = "Purchase not found"
                     )
                 )

@@ -23,7 +23,7 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.x3squaredcircles.pixmap.core.ui.screenmodels.AddLocationScreenModel
-import com.x3squaredcircles.pixmap.shared.application.interfaces.services.ErrorDisplayEventArgs
+
 
 /**
  * Core UI Screen for adding/editing locations

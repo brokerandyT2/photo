@@ -13,6 +13,10 @@ kotlin {
 
     sourceSets {
         val commonMain by getting {
+            kotlin.srcDirs(
+                "src/commonMain/kotlin",
+                "core-ui/src/commonMain/kotlin"  // Add this line
+            )
             dependencies {
                 // Coroutines
                 implementation(libs.kotlinx.coroutines.core)
@@ -20,7 +24,19 @@ kotlin {
                 implementation(libs.kotlinx.serialization.json.v173)
                 // Serialization
                 implementation(libs.kotlinx.serialization.json)
+                // Add these for Compose UI components (using direct versions)
+                implementation("androidx.compose.runtime:runtime:1.5.8")
+                implementation("androidx.compose.foundation:foundation:1.5.8")
+                implementation("androidx.compose.material3:material3:1.1.2")
+                implementation("androidx.compose.ui:ui:1.5.8")
 
+                // Add these for Voyager navigation (check if these work with your libs)
+                implementation(libs.voyager.navigator)
+                implementation(libs.voyager.screenmodel)
+                implementation(libs.voyager.koin)
+
+                // Add Coil for AsyncImage (check if this works with your libs)
+                implementation("io.coil-kt:coil-compose:2.5.0")
                 // DateTime
                 implementation(libs.kotlinx.datetime)
 
@@ -75,6 +91,9 @@ kotlin {
 
                 // Android Notifications
                 implementation(libs.androidx.core.ktx.v1131)
+                // Add Android-specific Compose dependencies
+                implementation(libs.androidx.activity.compose)
+                implementation(libs.androidx.ui.tooling.preview)
             }
         }
 
@@ -103,6 +122,7 @@ android {
 dependencies {
     implementation(libs.androidx.material3.android)
     implementation(libs.androidx.ui.text.android)
+
 }
 
 sqldelight {

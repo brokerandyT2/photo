@@ -1,5 +1,6 @@
 package com.x3squaredcircles.pixmap.ui.components
 
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -14,7 +15,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import kotlinx.*
 import com.x3squaredcircles.pixmap.shared.application.dto.LocationDto
+
 
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -90,7 +93,7 @@ fun LocationCard(
 
                 // Date saved
                 Text(
-                    text = "Saved: ${location.timestamp.toLocalDateTime(TimeZone.currentSystemDefault()).date}",
+                    text = "Saved: ${Clock.System.now().date}",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
