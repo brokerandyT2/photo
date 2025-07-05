@@ -10,7 +10,7 @@ import com.x3squaredcircles.pixmap.shared.application.handlers.commands.DeleteLo
 import com.x3squaredcircles.pixmap.shared.application.handlers.commands.UpdateLocationCommandHandler
 import com.x3squaredcircles.pixmap.shared.application.handlers.commands.UpdateSettingCommandHandler
 import com.x3squaredcircles.pixmap.shared.application.handlers.commands.UpdateWeatherCommandHandler
-import com.x3squaredcircles.pixmap.shared.application.handlers.queries.GetActiveLocationsQueryHandler
+
 import com.x3squaredcircles.pixmap.shared.application.handlers.queries.GetAllLocationsQueryHandler
 import com.x3squaredcircles.pixmap.shared.application.handlers.queries.GetAllSettingsQueryHandler
 import com.x3squaredcircles.pixmap.shared.application.handlers.queries.GetAllTipTypesQueryHandler
@@ -19,8 +19,7 @@ import com.x3squaredcircles.pixmap.shared.application.handlers.queries.GetNearby
 import com.x3squaredcircles.pixmap.shared.application.handlers.queries.GetPagedLocationsQueryHandler
 import com.x3squaredcircles.pixmap.shared.application.handlers.queries.GetRandomTipByTypeQueryHandler
 import com.x3squaredcircles.pixmap.shared.application.handlers.queries.GetSettingByKeyQueryHandler
-import com.x3squaredcircles.pixmap.shared.application.handlers.queries.GetTipsByTypeQueryHandler
-import com.x3squaredcircles.pixmap.shared.application.handlers.queries.GetWeatherByLocationIdQueryHandler
+
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IMediator
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IRequestHandler
 import com.x3squaredcircles.pixmap.shared.infrastructure.mediator.Mediator

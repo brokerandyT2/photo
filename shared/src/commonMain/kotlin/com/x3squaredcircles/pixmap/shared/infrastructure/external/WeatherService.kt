@@ -1,35 +1,44 @@
 // shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/infrastructure/external/WeatherService.kt
 
-import com.x3squaredcircles.pixmap.shared.application.common.interfaces.ILocationRepository
-import com.x3squaredcircles.pixmap.shared.application.common.interfaces.ISettingRepository
-import com.x3squaredcircles.pixmap.shared.application.common.interfaces.IWeatherRepository
-import com.x3squaredcircles.pixmap.shared.application.common.interfaces.IWeatherService
+
 import com.x3squaredcircles.pixmap.shared.application.common.models.Result
-import com.x3squaredcircles.pixmap.shared.application.weather.dtos.*
+import com.x3squaredcircles.pixmap.shared.application.dto.DailyForecastDto
+import com.x3squaredcircles.pixmap.shared.application.dto.HourlyForecastDto
+import com.x3squaredcircles.pixmap.shared.application.dto.HourlyWeatherForecastDto
+import com.x3squaredcircles.pixmap.shared.application.dto.WeatherDto
+import com.x3squaredcircles.pixmap.shared.application.dto.WeatherForecastDto
+import com.x3squaredcircles.pixmap.shared.application.interfaces.repositories.ILocationRepository
+import com.x3squaredcircles.pixmap.shared.application.interfaces.repositories.ISettingRepository
+import com.x3squaredcircles.pixmap.shared.application.interfaces.repositories.IWeatherRepository
+import com.x3squaredcircles.pixmap.shared.application.interfaces.services.ILoggingService
+import com.x3squaredcircles.pixmap.shared.application.interfaces.services.IWeatherService
+
 import com.x3squaredcircles.pixmap.shared.domain.entities.Weather
 import com.x3squaredcircles.pixmap.shared.domain.entities.WeatherForecast
 import com.x3squaredcircles.pixmap.shared.domain.entities.HourlyForecast
 import com.x3squaredcircles.pixmap.shared.domain.exceptions.WeatherDomainException
 import com.x3squaredcircles.pixmap.shared.domain.valueobjects.Coordinate
 import com.x3squaredcircles.pixmap.shared.domain.valueobjects.WindInfo
-import com.x3squaredcircles.pixmap.shared.infrastructure.external.models.OpenWeatherResponse
+//import com.x3squaredcircles.pixmap.shared.infrastructure.external.models.OpenWeatherResponse
 import com.x3squaredcircles.pixmap.shared.infrastructure.services.IInfrastructureExceptionMappingService
 import io.ktor.client.*
 import io.ktor.client.call.*
+import io.ktor.client.plugins.timeout
 import io.ktor.client.request.*
 import io.ktor.http.*
-import kotlinx.coroutines.logging.Logger
+
 import kotlinx.datetime.*
 import kotlinx.serialization.json.Json
 import kotlin.math.min
 import kotlin.math.pow
+import kotlin.time.Duration.Companion.days
 
 class WeatherService(
     private val httpClient: HttpClient,
     private val locationRepository: ILocationRepository,
     private val weatherRepository: IWeatherRepository,
     private val settingRepository: ISettingRepository,
-    private val logger: Logger,
+    private val logger: ILoggingService,
     private val exceptionMapper: IInfrastructureExceptionMappingService
 ) : IWeatherService {
 
@@ -85,7 +94,8 @@ class WeatherService(
                     locationId = locationId,
                     coordinate = coordinate,
                     timezone = apiData.timezone,
-                    timezoneOffset = apiData.timezoneOffset
+                    timezoneOffset = apiData.timezoneOffset,
+                    lastUpdate = Instant.fromEpochSeconds(Clock.System.now().toEpochMilliseconds())
                 )
             }
 
@@ -100,7 +110,7 @@ class WeatherService(
                     maxTemperature = dailyForecast.maxTemperature,
                     description = dailyForecast.description,
                     icon = dailyForecast.icon,
-                    windInfo = WindInfo(
+                    wind =  WindInfo(
                         speed = dailyForecast.windSpeed,
                         direction = dailyForecast.windDirection,
                         gust = dailyForecast.windGust
@@ -123,9 +133,12 @@ class WeatherService(
                     feelsLike = hourlyForecast.feelsLike,
                     description = hourlyForecast.description,
                     icon = hourlyForecast.icon,
-                    windSpeed = hourlyForecast.windSpeed,
-                    windDirection = hourlyForecast.windDirection,
-                    windGust = hourlyForecast.windGust,
+                    wind = WindInfo(
+                        speed = hourlyForecast.windSpeed,
+                        direction = hourlyForecast.windDirection,
+                        gust = hourlyForecast.windGust
+                    ),
+
                     humidity = hourlyForecast.humidity,
                     pressure = hourlyForecast.pressure,
                     clouds = hourlyForecast.clouds,
@@ -232,7 +245,7 @@ class WeatherService(
 
         return requiredDates.all { requiredDate ->
             weather.forecasts.any { forecast ->
-                val forecastDate = forecast.date.toLocalDateTime(TimeZone.currentSystemDefault()).date
+                val forecastDate = forecast.date
                 forecastDate == requiredDate
             }
         }
@@ -301,7 +314,8 @@ class WeatherService(
             timezoneOffset = weather.timezoneOffset,
             lastUpdate = weather.lastUpdate,
             temperature = currentForecast?.temperature ?: currentApiData?.temperature ?: 0.0,
-            feelsLike = currentForecast?.feelsLike ?: currentApiData?.feelsLike ?: 0.0,
+            minimumTemp = currentForecast?.minTemperature ?: currentApiData?.minTemperature ?: 0.0,
+            maximumTemp = currentForecast?.maxTemperature ?: currentApiData?.maxTemperature ?: 0.0,
             description = currentForecast?.description ?: currentApiData?.description ?: "",
             icon = currentForecast?.icon ?: currentApiData?.icon ?: "",
             windSpeed = currentForecast?.wind?.speed ?: currentApiData?.windSpeed ?: 0.0,
@@ -346,7 +360,7 @@ class WeatherService(
         for (i in 0 until min(response.daily.size, 7)) {
             val daily = response.daily[i]
             val dailyDto = DailyForecastDto(
-                date = Instant.fromEpochSeconds(daily.dt),
+                date = Instant.fromEpochSeconds(daily.dt).toLocalDateTime(TimeZone.currentSystemDefault()).date,
                 sunrise = Instant.fromEpochSeconds(daily.sunrise),
                 sunset = Instant.fromEpochSeconds(daily.sunset),
                 temperature = daily.temp.day,

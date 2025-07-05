@@ -33,7 +33,7 @@ class CreateLocationCommandHandler(
         }
 
         val errors = mutableListOf<String>()
-        if (!LocationValidationRules.isValid(location, errors)) {
+        if (!LocationValidationRules.isValid(location)) {
             throw IllegalArgumentException("Validation failed: ${errors.joinToString(", ")}")
         }
 

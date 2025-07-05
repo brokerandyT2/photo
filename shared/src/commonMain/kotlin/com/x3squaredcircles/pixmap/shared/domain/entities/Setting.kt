@@ -15,7 +15,7 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class Setting(
-
+  override var id: Int = 0,
     val key: String,
     val value: String,
     val description: String = "",

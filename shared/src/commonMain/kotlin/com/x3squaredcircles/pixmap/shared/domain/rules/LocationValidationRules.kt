@@ -11,7 +11,9 @@ object LocationValidationRules {
     /**
      * Validates the specified Location object and returns a value indicating whether it is valid.
      */
-    fun isValid(location: Location?, errors: MutableList<String>): Boolean {
+    fun isValid(location: Location?): Boolean {
+
+        var errors: MutableList<String> = mutableListOf()
         errors.clear()
 
         if (location == null) {

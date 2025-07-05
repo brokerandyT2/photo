@@ -2,13 +2,14 @@
 
 import com.x3squaredcircles.pixmap.shared.application.interfaces.services.IEventBus
 import com.x3squaredcircles.pixmap.shared.application.interfaces.services.IEventHandler
+import com.x3squaredcircles.pixmap.shared.application.interfaces.services.ILoggingService
 import com.x3squaredcircles.pixmap.shared.domain.interfaces.IDomainEvent
-import kotlinx.coroutines.logging.Logger
+
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 class InMemoryEventBus(
-    private val logger: Logger
+    private val logger: ILoggingService
 ) : IEventBus {
 
     private val eventHandlers = mutableMapOf<String, MutableList<Any>>()

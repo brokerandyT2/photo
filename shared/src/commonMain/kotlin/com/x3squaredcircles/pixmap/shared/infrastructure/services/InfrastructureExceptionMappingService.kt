@@ -5,6 +5,7 @@ import com.x3squaredcircles.pixmap.shared.application.interfaces.services.ILoggi
 import com.x3squaredcircles.pixmap.shared.domain.exceptions.*
 import io.ktor.client.network.sockets.*
 import io.ktor.client.plugins.*
+import io.ktor.util.network.UnresolvedAddressException
 import kotlinx.coroutines.TimeoutCancellationException
 
 /**
@@ -285,7 +286,7 @@ fun IInfrastructureExceptionMappingService.mapDatabaseException(
     exception: Throwable,
     entityType: String,
     operation: String
-): RuntimeException {
+): Exception {
     return when (entityType.lowercase()) {
         "location" -> mapToLocationDomainException(exception, operation)
         "weather" -> mapToWeatherDomainException(exception, operation)

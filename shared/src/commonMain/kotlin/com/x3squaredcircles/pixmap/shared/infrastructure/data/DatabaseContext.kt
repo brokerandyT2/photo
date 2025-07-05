@@ -173,11 +173,11 @@ class DatabaseContext(
 
     // ===== QUERY OPERATIONS =====
 
-    override suspend fun <T : Any> queryAsync(
+    suspend fun <T : Any, Q: Any> queryAsync(
         sql: String,
-        resultMapper: KFunction1<SqlCursor, LocationEntity>,
+        resultMapper: KFunction1<T,Q>,
         vararg parameters: Any?
-    ): List<T> {
+    ): List<Q> {
         return withContext(Dispatchers.IO) {
             try {
                 ensureInitializedAsync()

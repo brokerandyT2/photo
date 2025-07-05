@@ -2,8 +2,9 @@
 
 package com.x3squaredcircles.pixmap.shared.infrastructure.persistence
 
+import app.cash.sqldelight.db.SqlCursor
 import com.x3squaredcircles.pixmap.shared.domain.entities.Setting
-import com.x3squaredcircles.pixmap.shared.infrastructure.database.IDatabaseContext
+import com.x3squaredcircles.pixmap.shared.infrastructure.data.IDatabaseContext
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
 
@@ -12,48 +13,44 @@ class SettingPersistenceRepository(
 ) : ISettingPersistenceRepository {
 
     override suspend fun getByIdAsync(id: Int): Setting? {
-        return context.executeQuerySingle(
-            sql = "SELECT * FROM SettingEntity WHERE id = ?",
-            parameters = listOf(id)
-        ) { cursor ->
-            mapToSetting(cursor)
-        }
+        return context.querySingleAsync(
+            "SELECT * FROM SettingEntity WHERE id = ?",
+            ::mapToSetting,
+            id
+        )
     }
 
     override suspend fun getByKeyAsync(key: String): Setting? {
-        return context.executeQuerySingle(
-            sql = "SELECT * FROM SettingEntity WHERE key = ?",
-            parameters = listOf(key)
-        ) { cursor ->
-            mapToSetting(cursor)
-        }
+        return context.querySingleAsync(
+            "SELECT * FROM SettingEntity WHERE key = ?",
+            ::mapToSetting,
+            key
+        )
     }
 
     override suspend fun getAllAsync(): List<Setting> {
-        return context.executeQuery(
-            sql = "SELECT * FROM SettingEntity ORDER BY key"
-        ) { cursor ->
-            mapToSetting(cursor)
-        }
+        return context.queryAsync(
+            "SELECT * FROM SettingEntity ORDER BY key",
+            ::mapToSetting
+        )
     }
 
     override suspend fun getByKeysAsync(keys: List<String>): List<Setting> {
         if (keys.isEmpty()) return emptyList()
 
         val placeholders = keys.joinToString(",") { "?" }
-        return context.executeQuery(
-            sql = "SELECT * FROM SettingEntity WHERE key IN ($placeholders) ORDER BY key",
-            parameters = keys
-        ) { cursor ->
-            mapToSetting(cursor)
-        }
+        return context.queryAsync(
+            "SELECT * FROM SettingEntity WHERE key IN ($placeholders) ORDER BY key",
+            ::mapToSetting,
+            *keys.toTypedArray()
+        )
     }
 
     override suspend fun addAsync(setting: Setting): Setting {
-        val existsResult = context.executeScalar(
-            sql = "SELECT COUNT(*) FROM SettingEntity WHERE key = ?",
-            parameters = listOf(setting.key)
-        ) { it.toString().toInt() }
+        val existsResult = context.queryScalarAsync<Long>(
+            "SELECT COUNT(*) FROM SettingEntity WHERE key = ?",
+            setting.key
+        ) ?: 0
 
         if (existsResult > 0) {
             throw IllegalStateException("Setting with key '${setting.key}' already exists")
@@ -61,300 +58,221 @@ class SettingPersistenceRepository(
 
         val timestamp = Clock.System.now().toEpochMilliseconds()
 
-        val id = context.executeNonQuery(
-            sql = """
+        val id = context.executeAsync(
+            """
                INSERT INTO SettingEntity (key, value, description, timestamp)
                VALUES (?, ?, ?, ?)
            """,
-            parameters = listOf(
-                setting.key,
-                setting.value,
-                setting.description,
-                timestamp
-            )
-        )
+            setting.key,
+            setting.value,
+            setting.description,
+            timestamp
+        ).toLong()
 
-        return Setting.create(
+        val createdSetting = Setting.create(
             id = id.toInt(),
             key = setting.key,
             value = setting.value,
-            description = setting.description,
-            timestamp = Instant.fromEpochMilliseconds(timestamp)
+            description = setting.description
         )
+
+        setIdUsingReflection(createdSetting, id.toInt())
+        return createdSetting
     }
 
     override suspend fun updateAsync(setting: Setting) {
         val timestamp = Clock.System.now().toEpochMilliseconds()
 
-        val rowsAffected = context.executeNonQuery(
-            sql = """
+        val rowsAffected = context.executeAsync(
+            """
                UPDATE SettingEntity 
                SET value = ?, description = ?, timestamp = ?
                WHERE key = ?
            """,
-            parameters = listOf(
-                setting.value,
-                setting.description,
-                timestamp,
-                setting.key
-            )
+            setting.value,
+            setting.description,
+            timestamp,
+            setting.key
         )
 
-        if (rowsAffected == 0L) {
+        if (rowsAffected == 0) {
             throw IllegalStateException("Setting with key '${setting.key}' not found for update")
         }
     }
 
     override suspend fun deleteAsync(setting: Setting) {
-        val rowsAffected = context.executeNonQuery(
-            sql = "DELETE FROM SettingEntity WHERE key = ?",
-            parameters = listOf(setting.key)
+        val rowsAffected = context.executeAsync(
+            "DELETE FROM SettingEntity WHERE key = ?",
+            setting.key
         )
 
-        if (rowsAffected == 0L) {
+        if (rowsAffected == 0) {
             throw IllegalStateException("Setting with key '${setting.key}' not found for deletion")
         }
     }
 
     override suspend fun upsertAsync(key: String, value: String, description: String?): Setting {
-        return context.executeInTransaction {
+        return context.withTransactionAsync {
             val existingSetting = getByKeyAsync(key)
             val timestamp = Clock.System.now().toEpochMilliseconds()
 
             if (existingSetting != null) {
-                context.executeNonQuery(
-                    sql = """
+                context.executeAsync(
+                    """
                        UPDATE SettingEntity 
                        SET value = ?, description = ?, timestamp = ?
                        WHERE key = ?
                    """,
-                    parameters = listOf(
-                        value,
-                        description ?: existingSetting.description,
-                        timestamp,
-                        key
-                    )
+                    value,
+                    description ?: existingSetting.description,
+                    timestamp,
+                    key
                 )
 
-                Setting.create(
+                val updatedSetting = Setting.create(
                     id = existingSetting.id,
                     key = key,
                     value = value,
-                    description = description ?: existingSetting.description,
-                    timestamp = Instant.fromEpochMilliseconds(timestamp)
+                    description = description ?: existingSetting.description
                 )
+
+                setIdUsingReflection(updatedSetting, existingSetting.id)
+                updatedSetting
             } else {
-                val id = context.executeNonQuery(
-                    sql = """
+                val id = context.executeAsync(
+                    """
                        INSERT INTO SettingEntity (key, value, description, timestamp)
                        VALUES (?, ?, ?, ?)
                    """,
-                    parameters = listOf(
-                        key,
-                        value,
-                        description ?: "",
-                        timestamp
-                    )
-                )
+                    key,
+                    value,
+                    description ?: "",
+                    timestamp
+                ).toLong()
 
-                Setting.create(
+                val newSetting = Setting.create(
                     id = id.toInt(),
                     key = key,
                     value = value,
-                    description = description ?: "",
-                    timestamp = Instant.fromEpochMilliseconds(timestamp)
+                    description = description ?: ""
                 )
+
+                setIdUsingReflection(newSetting, id.toInt())
+                newSetting
             }
         }
     }
 
     override suspend fun getAllAsDictionaryAsync(): Map<String, String> {
-        val settings = context.executeQuery(
-            sql = "SELECT key, value FROM SettingEntity ORDER BY key"
-        ) { cursor ->
-            Pair(
-                cursor.getString(0) ?: "",
-                cursor.getString(1) ?: ""
-            )
-        }
+        val keyValuePairs = context.queryAsync(
+            "SELECT key, value FROM SettingEntity ORDER BY key",
+            ::mapToKeyValuePair
+        )
 
-        return settings.toMap()
+        return keyValuePairs.toMap()
     }
 
     override suspend fun getByPrefixAsync(keyPrefix: String): List<Setting> {
         val searchPattern = "$keyPrefix%"
-        return context.executeQuery(
-            sql = "SELECT * FROM SettingEntity WHERE key LIKE ? ORDER BY key",
-            parameters = listOf(searchPattern)
-        ) { cursor ->
-            mapToSetting(cursor)
-        }
+        return context.queryAsync(
+            "SELECT * FROM SettingEntity WHERE key LIKE ? ORDER BY key",
+            ::mapToSetting,
+            searchPattern
+        )
     }
 
     override suspend fun getRecentlyModifiedAsync(count: Int): List<Setting> {
-        return context.executeQuery(
-            sql = "SELECT * FROM SettingEntity ORDER BY timestamp DESC LIMIT ?",
-            parameters = listOf(count)
-        ) { cursor ->
-            mapToSetting(cursor)
-        }
+        return context.queryAsync(
+            "SELECT * FROM SettingEntity ORDER BY timestamp DESC LIMIT ?",
+            ::mapToSetting,
+            count
+        )
     }
 
     override suspend fun existsAsync(key: String): Boolean {
-        return context.executeScalar(
-            sql = "SELECT EXISTS(SELECT 1 FROM SettingEntity WHERE key = ?)",
-            parameters = listOf(key)
-        ) { it.toString().toInt() > 0 }
+        val result = context.queryScalarAsync<Long>(
+            "SELECT EXISTS(SELECT 1 FROM SettingEntity WHERE key = ?)",
+            key
+        ) ?: 0
+
+        return result > 0
     }
 
     override suspend fun createBulkAsync(settings: List<Setting>): List<Setting> {
-        if (settings.isEmpty()) return settings
+        if (settings.isEmpty()) return emptyList()
 
-        val keys = settings.map { it.key }
-        val duplicateKeys = keys.groupingBy { it }.eachCount().filterValues { it > 1 }.keys
-        if (duplicateKeys.isNotEmpty()) {
-            throw IllegalArgumentException("Duplicate keys in batch: ${duplicateKeys.joinToString(", ")}")
-        }
-
-        val placeholders = keys.joinToString(",") { "?" }
-        val existingKeys = context.executeQuery(
-            sql = "SELECT key FROM SettingEntity WHERE key IN ($placeholders)",
-            parameters = keys
-        ) { cursor ->
-            cursor.getString(0) ?: ""
-        }
-
-        if (existingKeys.isNotEmpty()) {
-            throw IllegalArgumentException("Settings with these keys already exist: ${existingKeys.joinToString(", ")}")
-        }
-
-        return context.executeInTransaction {
-            val results = mutableListOf<Setting>()
-            settings.chunked(100).forEach { batch ->
-                batch.forEach { setting ->
-                    val result = addAsync(setting)
-                    results.add(result)
-                }
+        return context.withTransactionAsync {
+            settings.map { setting ->
+                addAsync(setting)
             }
-            results
         }
     }
 
     override suspend fun updateBulkAsync(settings: List<Setting>): Int {
         if (settings.isEmpty()) return 0
 
-        return context.executeInTransaction {
-            var updatedCount = 0
-            settings.chunked(100).forEach { batch ->
-                batch.forEach { setting ->
-                    updateAsync(setting)
-                    updatedCount++
-                }
+        return context.withTransactionAsync {
+            var updated = 0
+            settings.forEach { setting ->
+                updateAsync(setting)
+                updated++
             }
-            updatedCount
+            updated
         }
     }
 
     override suspend fun deleteBulkAsync(keys: List<String>): Int {
         if (keys.isEmpty()) return 0
 
-        return context.executeInTransaction {
-            var totalDeleted = 0
-            keys.chunked(100).forEach { batch ->
-                val placeholders = batch.joinToString(",") { "?" }
-                val deleted = context.executeNonQuery(
-                    sql = "DELETE FROM SettingEntity WHERE key IN ($placeholders)",
-                    parameters = batch
-                )
-                totalDeleted += deleted.toInt()
-            }
-            totalDeleted
+        return context.withTransactionAsync {
+            val placeholders = keys.joinToString(",") { "?" }
+            context.executeAsync(
+                "DELETE FROM SettingEntity WHERE key IN ($placeholders)",
+                *keys.toTypedArray()
+            )
         }
     }
 
     override suspend fun upsertBulkAsync(keyValuePairs: Map<String, String>): Map<String, String> {
         if (keyValuePairs.isEmpty()) return emptyMap()
 
-        return context.executeInTransaction {
-            val result = mutableMapOf<String, String>()
-
-            val keys = keyValuePairs.keys.toList()
-            val placeholders = keys.joinToString(",") { "?" }
-            val existingSettings = context.executeQuery(
-                sql = "SELECT key, value, description, id FROM SettingEntity WHERE key IN ($placeholders)",
-                parameters = keys
-            ) { cursor ->
-                SettingDto(
-                    id = cursor.getInt(3) ?: 0,
-                    key = cursor.getString(0) ?: "",
-                    value = cursor.getString(1) ?: "",
-                    description = cursor.getString(2) ?: ""
-                )
-            }
-
-            val existingByKey = existingSettings.associateBy { it.key }
-            val timestamp = Clock.System.now().toEpochMilliseconds()
-
+        return context.withTransactionAsync {
+            val results = mutableMapOf<String, String>()
             keyValuePairs.forEach { (key, value) ->
-                if (existingByKey.containsKey(key)) {
-                    context.executeNonQuery(
-                        sql = """
-                           UPDATE SettingEntity 
-                           SET value = ?, timestamp = ?
-                           WHERE key = ?
-                       """,
-                        parameters = listOf(value, timestamp, key)
-                    )
-                } else {
-                    context.executeNonQuery(
-                        sql = """
-                           INSERT INTO SettingEntity (key, value, description, timestamp)
-                           VALUES (?, ?, ?, ?)
-                       """,
-                        parameters = listOf(key, value, "", timestamp)
-                    )
-                }
-                result[key] = value
+                val setting = upsertAsync(key, value, null)
+                results[key] = setting.value
             }
-
-            result
+            results
         }
     }
 
-    private fun mapToSetting(cursor: com.x3squaredcircles.pixmap.shared.infrastructure.database.SqlCursor): Setting {
-        return Setting.create(
-            id = cursor.getInt(0) ?: 0,
-            key = cursor.getString(1) ?: "",
-            value = cursor.getString(2) ?: "",
-            description = cursor.getString(3) ?: "",
-            timestamp = Instant.fromEpochMilliseconds(cursor.getLong(4) ?: 0L)
-        )
+    private fun setIdUsingReflection(entity: Any, id: Int) {
+        try {
+            val idField = entity::class.java.getDeclaredField("id")
+            idField.isAccessible = true
+            idField.setInt(entity, id)
+        } catch (e: Exception) {
+            // Log warning if needed
+        }
     }
 
-    private data class SettingDto(
-        val id: Int,
-        val key: String,
-        val value: String,
-        val description: String
-    )
+    private fun mapToSetting(cursor: Any): Setting {
+        val sqlCursor = cursor as SqlCursor
+        val setting = Setting.create(
+            key = sqlCursor.getString(1) ?: "",
+            value = sqlCursor.getString(2) ?: "",
+            description = sqlCursor.getString(3) ?: ""
+        )
+
+        setIdUsingReflection(setting, sqlCursor.getLong(0)?.toInt() ?: 0)
+        return setting
+    }
+
+    private fun mapToKeyValuePair(cursor: Any): Pair<String, String> {
+        val sqlCursor = cursor as SqlCursor
+        return Pair(
+            sqlCursor.getString(0) ?: "",
+            sqlCursor.getString(1) ?: ""
+        )
+    }
 }
-
-fun Setting.toKeyValueDto() = mapOf(
-    "key" to key,
-    "value" to value
-)
-
-fun Setting.toSummaryDto() = mapOf(
-    "id" to id,
-    "key" to key,
-    "value" to value,
-    "timestamp" to timestamp.toEpochMilliseconds()
-)
-
-fun Setting.toDetailDto() = mapOf(
-    "id" to id,
-    "key" to key,
-    "value" to value,
-    "description" to description,
-    "timestamp" to timestamp.toEpochMilliseconds()
-)

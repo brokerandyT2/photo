@@ -146,7 +146,7 @@ class WeatherService(
             // Create hourly forecasts from API data
             val hourlyForecasts = apiData.hourlyForecasts.map { hourlyForecast ->
                 HourlyForecast(
-                    id = 0,
+
                     weatherId = updatedWeather.id,
                     dateTime = hourlyForecast.dateTime,
                     temperature = hourlyForecast.temperature,

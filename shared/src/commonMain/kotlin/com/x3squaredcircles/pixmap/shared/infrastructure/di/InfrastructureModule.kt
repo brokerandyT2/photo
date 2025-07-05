@@ -1,15 +1,16 @@
 // shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/infrastructure/di/InfrastructureModule.kt
 
+import androidx.sqlite.db.SimpleSQLiteQuery.Companion.bind
 import com.x3squaredcircles.pixmap.shared.application.common.interfaces.*
+import com.x3squaredcircles.pixmap.shared.domain.interfaces.IUnitOfWork
 import com.x3squaredcircles.pixmap.shared.infrastructure.data.DatabaseContext
 import com.x3squaredcircles.pixmap.shared.infrastructure.data.IDatabaseContext
 import com.x3squaredcircles.pixmap.shared.infrastructure.data.repositories.*
-import com.x3squaredcircles.pixmap.shared.infrastructure.events.InMemoryEventBus
-import com.x3squaredcircles.pixmap.shared.infrastructure.external.WeatherService
+
 import com.x3squaredcircles.pixmap.shared.infrastructure.services.*
 import com.x3squaredcircles.pixmap.shared.infrastructure.unitofwork.UnitOfWork
 import io.ktor.client.*
-import io.ktor.client.engine.cio.*
+
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.plugins.logging.*
 import io.ktor.serialization.kotlinx.json.*
