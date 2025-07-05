@@ -15,8 +15,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.x3squaredcircles.pixmap.shared.application.dto.LocationDto
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.toLocalDateTime
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
