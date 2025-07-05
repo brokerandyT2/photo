@@ -1,4 +1,5 @@
 // shared/src/commonMain/kotlin/com/x3squaredcircles/pixmap/shared/infrastructure/services/LoggingService.kt
+package com.x3squaredcircles.pixmap.shared.infrastructure.services
 
 import com.x3squaredcircles.pixmap.shared.application.interfaces.services.ILoggingService
 import com.x3squaredcircles.pixmap.shared.application.interfaces.services.LogLevel
@@ -80,6 +81,21 @@ class LoggingService(
         logMessage(LogLevel.WARNING, message, null, tag)
     }
 
+     fun logError(message: String, tag: String?) {
+        logMessage(LogLevel.ERROR, message, null, tag)
+    }
+
+     fun logError(message: String, exception: Throwable, tag: String?) {
+        logMessage(LogLevel.ERROR, message, exception, tag)
+    }
+
+     fun logCritical(message: String, tag: String?) {
+        logMessage(LogLevel.CRITICAL, message, null, tag)
+    }
+
+     fun logCritical(message: String, exception: Throwable, tag: String?) {
+        logMessage(LogLevel.CRITICAL, message, exception, tag)
+    }
     override fun logError(message: String, exception: Throwable?, tag: String?) {
         logMessage(LogLevel.ERROR, message, exception, tag)
     }
@@ -89,66 +105,98 @@ class LoggingService(
     }
 
     override fun logOperationStart(operationName: String, parameters: Map<String, Any>?) {
-        val parametersString = parameters?.let { params ->
-            params.entries.joinToString(", ") { "${it.key}=${it.value}" }
-        } ?: ""
-
-        val message = "Operation started: $operationName" +
-                if (parametersString.isNotEmpty()) " | Parameters: [$parametersString]" else ""
-
-        logInfo(message, "OPERATION")
+        val paramString = parameters?.entries?.joinToString(", ") { "${it.key}=${it.value}" } ?: ""
+        logMessage(LogLevel.INFO, "Operation started: $operationName | Parameters: $paramString", null, "OPERATION")
     }
 
     override fun logOperationComplete(operationName: String, durationMs: Long?, result: String?) {
-        val durationString = durationMs?.let { " | Duration: ${it}ms" } ?: ""
-        val resultString = result?.let { " | Result: $it" } ?: ""
-
-        val message = "Operation completed: $operationName$durationString$resultString"
-        logInfo(message, "OPERATION")
+        val duration = durationMs?.let { " | Duration: ${it}ms" } ?: ""
+        val resultStr = result?.let { " | Result: $it" } ?: ""
+        logMessage(LogLevel.INFO, "Operation completed: $operationName$duration$resultStr", null, "OPERATION")
     }
 
     override fun logOperationFailure(operationName: String, exception: Throwable, durationMs: Long?) {
-        val durationString = durationMs?.let { " | Duration: ${it}ms" } ?: ""
-        val message = "Operation failed: $operationName$durationString | Error: ${exception.message}"
-        logError(message, exception, "OPERATION")
+        val duration = durationMs?.let { " | Duration: ${it}ms" } ?: ""
+        logMessage(LogLevel.ERROR, "Operation failed: $operationName$duration", exception, "OPERATION")
     }
 
     override fun performance(operation: String, durationMs: Long, success: Boolean) {
         val status = if (success) "SUCCESS" else "FAILURE"
-        val message = "Performance: $operation | Duration: ${durationMs}ms | Status: $status"
-        logInfo(message, "PERFORMANCE")
+        logMessage(LogLevel.INFO, "Performance: $operation | Duration: ${durationMs}ms | Status: $status", null, "PERFORMANCE")
     }
 
     override fun userActivity(activity: String, properties: Map<String, Any?>) {
         val propertiesString = if (properties.isNotEmpty()) {
             " | Properties: ${properties.entries.joinToString(", ") { "${it.key}=${it.value}" }}"
         } else ""
-
-        val message = "User Activity: $activity$propertiesString"
-        logInfo(message, "USER_ACTIVITY")
+        logMessage(LogLevel.INFO, "User Activity: $activity$propertiesString", null, "USER_ACTIVITY")
     }
 
     override fun security(event: String, severity: SecuritySeverity, properties: Map<String, Any?>) {
+        val level = when (severity) {
+            SecuritySeverity.LOW -> LogLevel.INFO
+            SecuritySeverity.MEDIUM -> LogLevel.WARNING
+            SecuritySeverity.HIGH -> LogLevel.ERROR
+            SecuritySeverity.CRITICAL -> LogLevel.CRITICAL
+            SecuritySeverity.INFO -> LogLevel.INFO
+            SecuritySeverity.WARNING -> LogLevel.WARNING
+        }
+        val propertiesString = if (properties.isNotEmpty()) {
+            " | Properties: ${properties.entries.joinToString(", ") { "${it.key}=${it.value}" }}"
+        } else ""
+        logMessage(level, "Security Event: $event$propertiesString", null, "SECURITY")
+    }
+
+    override fun structured(level: LogLevel, message: String, category: String, properties: Map<String, Any?>, exception: Throwable?) {
+        val propertiesString = if (properties.isNotEmpty()) {
+            " | Properties: ${properties.entries.joinToString(", ") { "${it.key}=${it.value}" }}"
+        } else ""
+        val structuredMessage = "[$category] $message$propertiesString"
+        logMessage(level, structuredMessage, exception, category)
+    }
+     fun logSecurityEvent(
+        message: String,
+        severity: SecuritySeverity,
+        userId: String?,
+        ipAddress: String?,
+        userAgent: String?,
+        properties: Map<String, Any?>
+    ) {
+        val level = when (severity) {
+            SecuritySeverity.INFO -> LogLevel.INFO
+            SecuritySeverity.WARNING -> LogLevel.WARNING
+            SecuritySeverity.CRITICAL -> LogLevel.CRITICAL
+            SecuritySeverity.LOW -> LogLevel.INFO
+            SecuritySeverity.MEDIUM ->  LogLevel.WARNING
+            SecuritySeverity.HIGH -> LogLevel.CRITICAL
+        }
+
+        val securityContext = buildString {
+            append("SECURITY")
+            userId?.let { append(" | User: $it") }
+            ipAddress?.let { append(" | IP: $it") }
+            userAgent?.let { append(" | UserAgent: $it") }
+        }
+
         val propertiesString = if (properties.isNotEmpty()) {
             " | Properties: ${properties.entries.joinToString(", ") { "${it.key}=${it.value}" }}"
         } else ""
 
-        val message = "Security Event: $event | Severity: $severity$propertiesString"
-
-        when (severity) {
-            SecuritySeverity.LOW -> logInfo(message, "SECURITY")
-            SecuritySeverity.MEDIUM -> logWarning(message, "SECURITY")
-            SecuritySeverity.HIGH -> logError(message, null, "SECURITY")
-            SecuritySeverity.CRITICAL -> critical(message)
-        }
+        val securityMessage = "$message$propertiesString"
+        logMessage(level, securityMessage, null, securityContext)
     }
 
-    override fun structured(
+     fun logEntry(entry: LogEntry) {
+        val level = LogLevel.valueOf(entry.level.toString())
+        logMessage(level, entry.message, entry.exception, entry.category)
+    }
+
+     fun logStructured(
         level: LogLevel,
         message: String,
         category: String,
-        properties: Map<String, Any?>,
-        exception: Throwable?
+        exception: Throwable?,
+        properties: Map<String, Any?>
     ) {
         val propertiesString = if (properties.isNotEmpty()) {
             " | Properties: ${properties.entries.joinToString(", ") { "${it.key}=${it.value}" }}"
@@ -195,13 +243,12 @@ class LoggingService(
     // Database operations
     suspend fun logToDatabaseAsync(level: LogLevel, message: String, exception: Throwable? = null, tag: String? = null) {
         try {
-            val logEntity = LogEntity(
+            val logEntity = com.x3squaredcircles.pixmap.shared.infrastructure.data.entities.LogEntity(
                 id = 0,
-                timestamp = Clock.System.now(),
+                timestamp = Clock.System.now().toEpochMilliseconds(),
                 level = level.name,
                 message = message,
-                exception = exception?.stackTraceToString() ?: "",
-                tag = tag ?: ""
+                exception = exception?.stackTraceToString() ?: ""
             )
 
             databaseContext.insertAsync(logEntity)
@@ -212,12 +259,12 @@ class LoggingService(
         }
     }
 
-    suspend fun getLogsAsync(count: Int = 100): List<LogEntity> {
+    suspend fun getLogsAsync(count: Int = 100): List<com.x3squaredcircles.pixmap.shared.infrastructure.data.entities.LogEntity> {
         return try {
-            databaseContext.executeQuery(
+            databaseContext.queryAsync(
                 "SELECT * FROM LogEntity ORDER BY Timestamp DESC LIMIT ?",
-                listOf(count),
-                ::mapCursorToLogEntity
+                ::mapCursorToLogEntity,
+                count
             )
         } catch (ex: Exception) {
             logger.error("Failed to retrieve logs from database", ex)
@@ -227,7 +274,7 @@ class LoggingService(
 
     suspend fun clearLogsAsync() {
         try {
-            val deletedCount = databaseContext.executeNonQuery("DELETE FROM LogEntity")
+            val deletedCount = databaseContext.executeAsync("DELETE FROM LogEntity")
             logger.info("Cleared $deletedCount logs from database")
         } catch (ex: Exception) {
             logger.error("Failed to clear logs from database", ex)
@@ -235,12 +282,12 @@ class LoggingService(
         }
     }
 
-    suspend fun getLogsByLevelAsync(level: LogLevel, count: Int = 100): List<LogEntity> {
+    suspend fun getLogsByLevelAsync(level: LogLevel, count: Int = 100): List<com.x3squaredcircles.pixmap.shared.infrastructure.data.entities.LogEntity> {
         return try {
-            databaseContext.executeQuery(
+            databaseContext.queryAsync(
                 "SELECT * FROM LogEntity WHERE Level = ? ORDER BY Timestamp DESC LIMIT ?",
-                listOf(level.name, count),
-                ::mapCursorToLogEntity
+                ::mapCursorToLogEntity,
+                level.name, count
             )
         } catch (ex: Exception) {
             logger.error("Failed to retrieve logs by level from database", ex)
@@ -248,12 +295,12 @@ class LoggingService(
         }
     }
 
-    suspend fun getLogsByTagAsync(tag: String, count: Int = 100): List<LogEntity> {
+    suspend fun getLogsByTagAsync(tag: String, count: Int = 100): List<com.x3squaredcircles.pixmap.shared.infrastructure.data.entities.LogEntity> {
         return try {
-            databaseContext.executeQuery(
+            databaseContext.queryAsync(
                 "SELECT * FROM LogEntity WHERE Tag = ? ORDER BY Timestamp DESC LIMIT ?",
-                listOf(tag, count),
-                ::mapCursorToLogEntity
+                ::mapCursorToLogEntity,
+                tag, count
             )
         } catch (ex: Exception) {
             logger.error("Failed to retrieve logs by tag from database", ex)
@@ -261,12 +308,12 @@ class LoggingService(
         }
     }
 
-    suspend fun getLogsByDateRangeAsync(startTime: Instant, endTime: Instant): List<LogEntity> {
+    suspend fun getLogsByDateRangeAsync(startTime: Instant, endTime: Instant): List<com.x3squaredcircles.pixmap.shared.infrastructure.data.entities.LogEntity> {
         return try {
-            databaseContext.executeQuery(
+            databaseContext.queryAsync(
                 "SELECT * FROM LogEntity WHERE Timestamp BETWEEN ? AND ? ORDER BY Timestamp DESC",
-                listOf(startTime.toString(), endTime.toString()),
-                ::mapCursorToLogEntity
+                ::mapCursorToLogEntity,
+                startTime.toEpochMilliseconds(), endTime.toEpochMilliseconds()
             )
         } catch (ex: Exception) {
             logger.error("Failed to retrieve logs by date range from database", ex)
@@ -276,10 +323,10 @@ class LoggingService(
 
     suspend fun deleteOldLogsAsync(olderThan: Instant): Int {
         return try {
-            val deletedCount = databaseContext.executeNonQuery(
+            val deletedCount = databaseContext.executeAsync(
                 "DELETE FROM LogEntity WHERE Timestamp < ?",
-                listOf(olderThan.toString())
-            ).toInt()
+                olderThan.toEpochMilliseconds()
+            )
             logger.info("Deleted $deletedCount old logs from database")
             deletedCount
         } catch (ex: Exception) {
@@ -333,14 +380,13 @@ class LoggingService(
         }
     }
 
-    private fun mapCursorToLogEntity(cursor: app.cash.sqldelight.db.SqlCursor): LogEntity {
-        return LogEntity(
+    private fun mapCursorToLogEntity(cursor: app.cash.sqldelight.db.SqlCursor): com.x3squaredcircles.pixmap.shared.infrastructure.data.entities.LogEntity {
+        return com.x3squaredcircles.pixmap.shared.infrastructure.data.entities.LogEntity(
             id = cursor.getLong(0)?.toInt() ?: 0,
-            timestamp = Instant.parse(cursor.getString(1) ?: Clock.System.now().toString()),
+            timestamp = cursor.getLong(1) ?: Clock.System.now().toEpochMilliseconds(),
             level = cursor.getString(2) ?: "INFO",
             message = cursor.getString(3) ?: "",
-            exception = cursor.getString(4) ?: "",
-            tag = cursor.getString(5) ?: ""
+            exception = cursor.getString(4) ?: ""
         )
     }
 }
@@ -378,13 +424,3 @@ private class TimedOperationImpl(
         return (Clock.System.now() - startTime).inWholeMilliseconds
     }
 }
-
-// Log entity data class
-data class LogEntity(
-    val id: Int = 0,
-    val timestamp: Instant,
-    val level: String,
-    val message: String,
-    val exception: String = "",
-    val tag: String = ""
-)

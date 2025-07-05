@@ -2,7 +2,7 @@
 package com.x3squaredcircles.pixmap.shared.infrastructure.di
 
 import InMemoryEventBus
-import LoggingService
+
 import TimezoneService
 import com.x3squaredcircles.pixmap.shared.application.interfaces.IUnitOfWork
 import com.x3squaredcircles.pixmap.shared.application.interfaces.repositories.*

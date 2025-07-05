@@ -172,7 +172,9 @@ enum class SecuritySeverity {
     LOW,
     MEDIUM,
     HIGH,
-    CRITICAL
+    CRITICAL,
+    INFO,
+    WARNING
 }
 
 /**

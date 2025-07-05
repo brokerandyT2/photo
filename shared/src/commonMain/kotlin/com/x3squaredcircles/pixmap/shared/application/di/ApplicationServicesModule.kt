@@ -2,8 +2,10 @@
 package com.x3squaredcircles.pixmap.shared.application.di
 
 import InMemoryEventBus
-import LoggingService
 import TimezoneService
+
+import com.x3squaredcircles.pixmap.shared.infrastructure.services.LoggingService
+
 import com.x3squaredcircles.pixmap.shared.application.events.DomainErrorEvent
 import com.x3squaredcircles.pixmap.shared.application.interfaces.services.*
 import com.x3squaredcircles.pixmap.shared.application.services.ErrorDisplayService
@@ -37,14 +39,8 @@ val applicationServicesModule = module {
     single<ITimezoneService> { TimezoneService() }
 
     // Alert Service - use infrastructure module implementation
-    single<IAlertService> {
-        object : IAlertService {
-            override suspend fun showInfoAlertAsync(message: String, title: String) {}
-            override suspend fun showSuccessAlertAsync(message: String, title: String) {}
-            override suspend fun showWarningAlertAsync(message: String, title: String) {}
-            override suspend fun showErrorAlertAsync(message: String, title: String) {}
-        }
-    }
+    single<IAlertService> { AlertingService(get()) }
+
 
     // Weather Service - with correct parameters
     single<IWeatherService> { WeatherService(get(), get(), get(), get(), get()) }
